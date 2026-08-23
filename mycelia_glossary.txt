@@ -1,0 +1,251 @@
+Mycelia Glossary of Self-Regulating Neural Dynamics
+
+1. Foundational Concepts
+
+1.1 Hidden State Geometry
+
+Definition: The trajectory of hidden state vectors h(l), where h of layer l is a vector in d-dimensional real space (that is, h(l) belongs to R^d, the d-dimensional real vector space), as they evolve through layers indexed by l, where l ranges from 1 to L, and through time steps indexed by t, where t ranges from 1 to T.
+
+Why it matters: Traditional training treats the forward pass as a black-box computation. We treat it as a dynamical system with measurable geometric properties, namely velocity, acceleration, curvature, and persistence. This reframes neural computation as trajectory evolution on a high-dimensional manifold.
+
+Novelty: Prior work (for example, Pascanu et al., 2013; Li et al., 2018) measured gradient norms or activation statistics post-hoc. We measure the geometry of the trajectory itself in real-time, using it as both diagnostic and control signal.
+
+1.2 The Governor Paradigm
+
+Definition: A set of inequality constraints embedded in the forward pass that bound the model's dynamical behavior. Each governor g_i defines an admissible region; when the optimizer pushes the system toward the boundary, the governor activates and performs "work" to keep the system inside.
+
+Governors in Mycelia:
+
+- FFN Veto
+  - Constraint: the Euclidean norm of h_FFN must be less than or equal to tau_FFN, written as the norm of h_FFN is at most tau_FFN.
+  - Activation signal: Norm exceeds target.
+
+- Alpha Scaling
+  - Constraint: the norm of the combined contribution alpha_a times a plus alpha_f times f must be less than or equal to tau_a.
+  - Activation signal: Combined contribution exceeds target.
+
+- Soft Cap
+  - Constraint: the norm of the residual r must be less than or equal to tau_cap.
+  - Activation signal: Residual norm exceeds cap.
+
+- MPC (Model Predictive Control)
+  - Constraint: I_combined must be less than or equal to I_target.
+  - Activation signal: Predicted instability exceeds threshold.
+
+Why it matters: Traditional regularization (dropout, weight decay, gradient clipping) acts on parameters or gradients. Governors act on hidden state trajectories, making them geometry-aware rather than parameter-aware.
+
+Novelty: To our knowledge, no prior work embeds multiple interacting dynamical constraints directly in the transformer forward pass. The closest analog is gradient clipping, which is a single scalar constraint on gradient norms, not a distributed system of geometry-aware controllers.
+
+2. Core Metrics
+
+2.1 Coherence (C)
+
+Definition: The acclamation rate from the MycelialConsensus mechanism. For each token position, we compute head-wise variance and threshold it.
+
+The formula, written out in words: Coherence C is computed as one over T times the sum from t equals 1 to T of the indicator function that sigma-squared-t is less than theta-t, where sigma-squared-t is the variance across attention heads at position t, and theta-t is an adaptive threshold based on robust statistics (MAD, the median absolute deviation, scaling).
+
+Interpretation: High coherence (C approximately equal to 1) means all heads agree, and the model has reached consensus. Low coherence means heads disagree, indicating semantic ambiguity or instability.
+
+Why we use it: Coherence is the primary signal for instability prediction. When heads disagree, the model is more likely to produce high-variance outputs that could cascade into norm explosions.
+
+Novelty: Prior work uses attention entropy or attention rollout for interpretability. We use inter-head variance as a dynamical stability indicator, not just an interpretability tool.
+
+2.2 Variance Delta (Delta)
+
+Definition: The difference between early-layer and late-layer variance.
+
+The formula, written out in words: Delta equals the mean early-layer variance (sigma-bar-squared-early) minus the mean late-layer variance (sigma-bar-squared-late), where early layers are those indexed 1 through L over 2, and late layers are those indexed L over 2 plus 1 through L.
+
+Interpretation:
+
+- Delta greater than 1.0: regime is DISSIPATED, meaning early layers have high variance and late layers stabilize it.
+- Delta between negative 1.0 and positive 1.0: regime is HARMONIZED, meaning variance is balanced across depth.
+- Delta less than negative 1.0: regime is DEEP DRIFT, meaning late layers amplify variance and there is runaway risk.
+
+Why we use it: Delta reveals whether the model is acting as a stable dynamical system (dissipative) or an unstable amplifier. This maps directly to the physics of energy flow in deep networks.
+
+Novelty: No prior work characterizes transformer depth dynamics through a variance gradient. This is inspired by Kolmogorov's energy cascade in turbulence; we treat information flow across layers as an energy transfer problem.
+
+2.3 Instability Field (I)
+
+Definition: The combined instability score at each layer.
+
+The formula, written out in words: I at layer l equals the confidence at layer l, written c(l), times the current consensus-based instability prediction at layer l, written P_current(l), plus one minus c(l) times the persistence term at layer l, written P_persist(l), where:
+
+- P_current(l) equals the sigmoid (sigma) of lambda_disagree(l) minus 1, representing the current consensus-based instability prediction.
+- P_persist(l) equals I(l minus 1), representing the previous layer's instability, that is, temporal persistence.
+- c(l) is the confidence in the current prediction.
+
+Extended with dynamics: I_combined at layer l equals I(l) plus weight-v times ReLU of v_I(l) plus weight-a times ReLU of a_I(l), where v_I is the partial derivative of I with respect to l (the instability velocity), and a_I is the second partial derivative of I with respect to l (the instability acceleration).
+
+Interpretation: I_combined measures how likely the model is to produce a norm explosion at the next layer. It blends current observation, historical persistence, and trend dynamics.
+
+Why we use it: I is the core predictive signal. Instead of reacting to norm explosions after they happen, we predict them one layer in advance.
+
+Novelty: This is a recursive Bayesian filter operating across network depth. Each layer is a filter that updates its belief about instability based on prior evidence and new observations. No prior work implements recursive instability forecasting across transformer layers.
+
+2.4 Forecast Confidence (F)
+
+Definition: The trustworthiness of the instability prediction.
+
+The formula, written out in words: F at layer l equals the sigmoid of (weight-c times C(l) plus weight-f times F(l minus 1)), all multiplied by the exponential of (negative gamma times ReLU of (kappa(l) minus kappa-zero)), where:
+
+- First term: base confidence from coherence and temporal persistence.
+- Second term: curvature damping, where anomalous trajectory curvature reduces confidence.
+
+Interpretation: High confidence means "trust this prediction." Low confidence means "this prediction is noisy, don't overreact."
+
+Critical property: Prediction and confidence are independent. A high instability prediction with low confidence should trigger minimal intervention. A low prediction with high confidence means "genuinely stable."
+
+Why we use it: Separating prediction from confidence prevents false positives. Traditional threshold-based methods (for example, gradient clipping at norm greater than 1.0) conflate magnitude and certainty.
+
+Novelty: The prediction-confidence separation is borrowed from Bayesian filtering but applied to internal network dynamics for the first time. The curvature damping term is entirely novel, since it uses geometric observables to calibrate confidence.
+
+2.5 Control Factor (alpha_eff divided by alpha_native)
+
+Definition: The multiplicative attenuation applied to residual weights.
+
+The formula, written out in words: alpha_eff equals alpha_native times the exponential of (negative gamma_control times F times I_combined).
+
+Interpretation: When both prediction and confidence are high, the control factor approaches 0.1 (the minimum). When either is low, it approaches 1.0 (no suppression).
+
+Why we use it: This implements the "both signals required" principle. The controller only intervenes when it is both confident and concerned.
+
+Novelty: Traditional controllers use single-threshold logic (for example, "if norm is greater than X, scale by Y"). Our controller uses a multiplicative interaction of two independent signals, making it robust to false positives.
+
+2.6 Forecast Error (epsilon)
+
+Definition: The absolute difference between predicted and actual intervention.
+
+The formula, written out in words: epsilon at layer l equals the absolute value of I_raw(l minus 1) minus the indicator function that I_combined(l) is greater than I_target, where I_raw is the instability prediction before dynamics terms and clamping.
+
+Interpretation: Low error means the recursive forecast is well-calibrated. High error means the model is systematically over- or under-predicting instability.
+
+Why we use it: Epsilon is the learning signal for online adaptation. If the controller is consistently wrong, we adapt the weights (weight-c, weight-f, gamma) to improve calibration.
+
+Novelty: Online adaptation of controller parameters via forecast error is a form of meta-learning within the forward pass. The controller learns to trust itself.
+
+3. Geometric Observables
+
+3.1 Velocity (v)
+
+Definition: The change in hidden state between consecutive layers.
+
+The formula, written out in words: v at layer l equals h(l) minus h(l minus 1). The two-norm of v, written as the norm of v, is the layer-to-layer displacement.
+
+Physical analog: Velocity in classical mechanics. Measures how fast the representation is changing.
+
+3.2 Acceleration (a)
+
+Definition: The change in velocity.
+
+The formula, written out in words: a at layer l equals v(l) minus v(l minus 1).
+
+Physical analog: Acceleration. Measures whether the representation change is speeding up or slowing down.
+
+3.3 Curvature (kappa)
+
+Definition: The angular curvature of the trajectory.
+
+The formula, written out in words: kappa equals the squared norm of v divided by the sum of the squared two-norm of v and epsilon times the two-norm of a.
+
+Physical analog: Curvature in differential geometry. Measures how sharply the trajectory is bending. High curvature means the model is changing direction in representation space, which often precedes instability.
+
+Why it matters: Curvature is used to modulate forecast confidence. Anomalous curvature (kappa greater than kappa-zero) reduces confidence because it indicates the trajectory is entering an unpredictable regime.
+
+3.4 Jerk (j)
+
+Definition: The rate of change of curvature.
+
+The formula, written out in words: j equals the absolute value of kappa(l) minus kappa(l minus 1).
+
+Physical analog: Jerk, which is the third derivative of position. Measures sudden changes in curvature. Persistent jerk indicates the model is in a turbulent regime.
+
+4. The Pressure Tensor (Pi)
+
+4.1 Definition
+
+Governor Work (lambda_i): The fractional reduction applied by each governor.
+
+- lambda_FFN equals 1 minus the minimum of 1 and the ratio of the norm of h_FFN to tau_FFN.
+- lambda_alpha equals 1 minus the minimum of 1 and the ratio of the norm of c to tau_alpha.
+- lambda_cap equals 1 minus 1 divided by (1 plus softplus of (the norm of r minus tau_cap), all divided by the norm of r).
+- lambda_MPC equals 1 minus the exponential of (negative gamma times F times I_combined).
+
+Constrained Quantity (g_i): The raw norm that the governor is limiting.
+
+- g_FFN equals the norm of h_FFN.
+- g_alpha equals the norm of c, the combined contribution.
+- g_cap equals the norm of r, the residual norm.
+- g_MPC equals I_combined.
+
+Layer Pressure: Pi at layer l equals the sum over all governors i of lambda_i(l) times g_i(l).
+
+Global Pressure: Pi equals one over L times the sum from l equals 1 to L of Pi(l).
+
+Concentration: rho equals Pi divided by (max over i of Pi_i plus epsilon).
+
+4.2 Interpretation
+
+Pi measures the total "optimization pressure," that is, the latent effort the optimizer exerts to push the system beyond its dynamical constraints. Each governor activation is not just a control action; it is a sensor reading of where the optimizer wants to go but is prevented.
+
+Physical analog: In continuum mechanics, strain describes deformation while stress describes the forces causing it. Hidden state geometry is the strain; optimization pressure is the stress.
+
+4.3 Why This Is Novel
+
+No prior work treats regularization and governance as a measurable physical observable. Traditional approaches view dropout, batch norm, or gradient clipping as necessary evils. We view them as diagnostic instruments that reveal the internal forces of optimization.
+
+The pressure tensor transforms governors from passive controllers into active sensors. This enables:
+
+- Real-time monitoring of optimization health.
+- Predictive intervention before collapse.
+- Interpretable failure modes (concentrated pressure means a single point of failure).
+
+5. MASSIF Taxonomy Integration
+
+5.1 Dynamical Classes
+
+- Accelerator: Delta_t less than negative 2, tau_eff greater than 0.5. Early warning is present; the model anticipates and avoids collapse.
+- Decelerator: Delta_t greater than 2. Late warning; the model reacts after instability begins.
+- Neutral: Delta_t in the interval from negative 2 to positive 2. No systematic warning pattern.
+- Runaway: any Delta_t. Norm explosion; governors are overwhelmed.
+- Stochastic: no directional consistency; random walk.
+
+5.2 Pressure-Conditioned Classification
+
+A model can be geometrically "Accelerator" but pressure-concentrated "Runaway (Constrained)." This means:
+
+- The hidden state geometry shows early warning signals.
+- But the optimization pressure is concentrated in one governor.
+- The model is stable only because a single constraint is load-bearing.
+
+This is a fragile equilibrium, and if that governor fails, the model collapses.
+
+6. Summary, Why This Approach Is Unique
+
+Aspect, Traditional Training:
+- Instability detection: Post-hoc (gradient norms, loss spikes).
+- Regularization: Parameter-level (weight decay, dropout).
+- Control: Single-threshold (gradient clipping).
+- Adaptation: Fixed hyperparameters.
+- Interpretability: Attention maps, neuron activations.
+- Philosophy: Train then diagnose.
+
+Aspect, Mycelia v8.7.4:
+- Instability detection: Predictive (recursive forecast).
+- Regularization: Geometry-level (governors on hidden states).
+- Control: Multi-signal Bayesian (prediction times confidence).
+- Adaptation: Online via forecast error.
+- Interpretability: Pressure tensor, dynamical class.
+- Philosophy: Diagnose while training, use diagnosis to train.
+
+7. For Our Students
+
+The core insight to convey:
+
+"We stopped treating neural networks as black boxes that occasionally fail. We started treating them as physical systems with measurable dynamics. The governors are not just safety rails, and they are seismometers. They tell us where the earthquake wants to happen, before it happens."
+
+The key question Mycelia answers:
+
+Not "Why did my model collapse?" but "Where is the optimizer trying to push energy, and what would happen if I let it?" 🍄 Mycelia v8.7 loaded, Geometric Dynamics Governor.
+
