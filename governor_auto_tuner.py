@@ -245,7 +245,7 @@ class GovernorAutoTuner:
         pressure = PressureState.from_telemetry(info)
 
         # R-guarded decision
-        r_decision = self._r_guarded_decision(pressure, step)
+        r_decision = self._r_guarded_decision(pressure, info, step)
 
         # Classic auto-tune parameter mutations (EMA-based)
         actions = []
