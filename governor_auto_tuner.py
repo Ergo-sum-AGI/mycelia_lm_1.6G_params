@@ -174,7 +174,7 @@ class GovernorAutoTuner:
 
         if R < 0.1 and alpha_scale_ratio < 0.01 and contrib_norm < alpha_target * 0.5:
             decision.r_action = "ALPHA_DORMANT"
-            decision.new_alpha_target = max(30.0, contrib_norm * 0.8)
+            decision.new_alpha_target = max(60.0, contrib_norm * 1.5)
             decision.notes = (
                 f"R={R:.3f}, alpha_scale={alpha_scale_ratio*100:.1f}%, "
                 f"contrib_norm={contrib_norm:.1f} << target={alpha_target:.1f} — "
