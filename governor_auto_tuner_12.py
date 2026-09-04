@@ -100,6 +100,8 @@ class GovernorAutoTuner:
         # Phase tracking
         self._event_count = 0
         self._phase_history: deque = deque(maxlen=10)
+        # v12.2: chi_R tracker state (survives checkpoint resume)
+        self._chi_state: Optional[Dict[str, Any]] = None
 
     # ─── PHASE COMPUTATION ────────────────────────────────────────────────
 
@@ -310,6 +312,7 @@ class GovernorAutoTuner:
             'forecast_weight': self.forecast_weight,
             'last_tune_step': self._last_tune_step,
             'event_count': self._event_count,
+            '_chi_state': self._chi_state,
         }
 
     def load_state(self, state: Dict):
@@ -320,3 +323,5 @@ class GovernorAutoTuner:
         self.forecast_weight = state.get('forecast_weight', 1.0)
         self._last_tune_step = state.get('last_tune_step', 0)
         self._event_count = state.get('event_count', 0)
+        # v12.2: Restore chi_R tracker state; re-prime from scratch if missing
+        self._chi_state = state.get('_chi_state', None)
