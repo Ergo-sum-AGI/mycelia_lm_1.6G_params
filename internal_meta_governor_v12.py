@@ -260,6 +260,12 @@ class InternalMetaGovernor:
             "mean_curvature": packet.mean_curvature,
             "pressure_dominant": getattr(packet, "pressure_dominant", "ffn"),
             "phase": auto_tuner.phase if (auto_tuner is not None and hasattr(auto_tuner, 'phase')) else 0.0,
+            # --- v12.1b: Ghost-parameter telemetry for alpha channel ---
+            "fiber_curvature_head_var": getattr(packet, "fiber_curvature_head_var", 0.0),
+            "optimization_response_chi_R": getattr(packet, "optimization_response_chi_R", 0.0),
+            "alpha_scale": getattr(packet, "alpha_scale", 1.0),
+            "contrib_norm": getattr(packet, "contrib_norm", 0.0),
+            # -----------------------------------------------------------
         }
 
         similar = self.memory.find_similar(ctx, k=5, min_similarity=0.25)
@@ -391,14 +397,20 @@ class InternalMetaGovernor:
         direction = decision["direction"]
         ctx = ctx or {}
         
-        # PHYSICS OVERRIDE: Block alpha sabotage during compensatory deadlock
-        # v12.2: Block the raise but DO NOT force a drop. The compounding 10%
-        # reductions were driving the alpha channel into the ground (R 0.14->0.08).
-        # Just block the LBR's escalation and let the target stabilize.
-        if var == "alpha_norm_target" and direction == "raise":
-            if ctx.get("pressure_dominant") == "ffn" and ctx.get("pressure_concentration", 0) > 0.80:
-                print(f"   🛑 PHYSICS_OVERRIDE: Blocked {var} {direction} (FFN dominant, stabilizing)")
-                return ["OVERRIDE: alpha_norm_target BLOCKED (stabilize)"]
+        # =====================================================================
+        # 🚑 GOVERNOR RESCUE (v12.1c) - The Definitive Fix
+        # If AlphaScale is relaxed > 0.95, the target is physically impossible.
+        # The governor has given up. Force the target to match actual capacity.
+        # =====================================================================
+        if var == "alpha_norm_target" and ctx.get("alpha_scale", 1.0) > 0.95:
+            contrib = ctx.get("contrib_norm", 30.0)
+            # Clamp the target to 105% of actual contribution, bounded [25.0, 40.0]
+            realistic = max(25.0, min(40.0, contrib * 1.05))
+            print(f"   🚑 GOVERNOR_RESCUE: scale={ctx.get('alpha_scale'):.3f}, forcing target to {realistic:.1f} (contrib={contrib:.1f})")
+            direction = "set"
+            decision["value"] = realistic
+            decision["direction"] = direction
+        # =====================================================================
 
         # Sterile-action guard
         if var == "instability_target" and mpc_intervention < 0.05:
@@ -512,11 +524,16 @@ class _MinimalTelemetryPacket:
     """Lightweight telemetry packet compatible with InternalMetaGovernor."""
     __slots__ = ("step", "loss", "lr", "coherence", "delta", "mpc_intervention",
                  "forecast_error", "pressure_concentration", "mean_curvature",
-                 "scheduler_alive", "lr_valid", "pressure_dominant")
+                 "scheduler_alive", "lr_valid", "pressure_dominant",
+                 "fiber_curvature_head_var", "optimization_response_chi_R",
+                 "alpha_scale", "contrib_norm")
 
     def __init__(self, step, loss, lr, coherence, delta, mpc_intervention,
                  forecast_error, pressure_concentration, mean_curvature,
-                 scheduler_alive, lr_valid, pressure_dominant="ffn"):
+                 scheduler_alive, lr_valid, pressure_dominant="ffn",
+                 fiber_curvature_head_var=0.0, optimization_response_chi_R=0.0,
+                 alpha_scale=1.0, contrib_norm=0.0):
+
         self.step = step
         self.loss = loss
         self.lr = lr
@@ -529,6 +546,10 @@ class _MinimalTelemetryPacket:
         self.scheduler_alive = scheduler_alive
         self.lr_valid = lr_valid
         self.pressure_dominant = pressure_dominant
+        self.fiber_curvature_head_var = fiber_curvature_head_var
+        self.optimization_response_chi_R = optimization_response_chi_R
+        self.alpha_scale = alpha_scale
+        self.contrib_norm = contrib_norm
 
     def to_dict(self):
         return {s: getattr(self, s) for s in self.__slots__}
