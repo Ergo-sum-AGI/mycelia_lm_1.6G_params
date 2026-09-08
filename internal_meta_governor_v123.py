@@ -1,5 +1,5 @@
 """
-Internal Meta-Governor v12.0 — Lesson-Based Retrieval (LBR)
+Internal Meta-Governor v12.3 — Lesson-Based Retrieval (LBR)
 ==========================================================
 Zero external API calls. Learns from mycelia_lessons.jsonl and live telemetry.
 Drop-in replacement for Meta-Governor v4.py.
@@ -21,20 +21,21 @@ from typing import Dict, List, Optional, Tuple, Any
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-
 LESSON_PATH_DEFAULT = os.path.join(
     os.environ.get("SM_MODEL_DIR", "/home/ec2-user/SageMaker"),
     "mycelia_checkpoints",
     "mycelia_lessons.jsonl"
 )
-
 GEOMETRY_PATH_DEFAULT = os.path.join(
     os.environ.get("SM_MODEL_DIR", "/home/ec2-user/SageMaker"),
     "mycelia_s3_chunks",
     "EN_Self_Geometry_p0.npy"
 )
 
-# Feature normalization ranges (empirical from Mycelia v8-v11 telemetry)
+# 🛡️ v12.4 FIX: Cleaned trailing spaces and aligned with training loop hard clamps.
+# Prevents the Meta-Governor from suggesting values that the training loop 
+# will silently overwrite, which causes false "failure" verifications and 
+# trips the Circuit Breaker.
 FEATURE_RANGES = {
     "loss": 5.0,
     "lr": 1e-3,
@@ -49,17 +50,28 @@ FEATURE_RANGES = {
     "phase": 1.0
 }
 
-# Actionable variable registry (must match training loop block attributes)
 PARAMETER_REGISTRY = {
-    "ffn_norm_target":     {"attr": "ffn_norm_target",     "lo": 10,   "hi": 1000, "target": "block"},
-    "alpha_norm_target":   {"attr": "alpha_norm_target",   "lo": 10,   "hi": 1000, "target": "block"},
-    "control_gain":        {"attr": "control_gain",        "lo": 0.01, "hi": 10.0,  "target": "block"},
-    "instability_target":  {"attr": "instability_target",  "lo": 0.01, "hi": 0.85,  "target": "block"},
-    "soft_cap":            {"attr": "soft_cap_target",       "lo": 100,  "hi": 2000,  "target": "block"},
-    "alpha_well_depth":    {"attr": None,                  "lo": -0.2, "hi": 0.6,   "target": "optimizer"},
-    "temperature":         {"attr": None,                  "lo": 0.3,  "hi": 2.0,   "target": "model"},
-}
+    # Training loop ramps to ~30.0. Operational range is ~20-40. 
+    # Capped at 60 to prevent governor disengagement (petrification).
+    "alpha_norm_target":  {"attr": "alpha_norm_target",   "lo": 20.0,  "hi": 60.0,  "target": "block"},
 
+    # Training loop ramps to 50.0. Operational range is ~30-60.
+    "ffn_norm_target":    {"attr": "ffn_norm_target",     "lo": 20.0,  "hi": 80.0,  "target": "block"},
+
+    # Training loop enforces a dynamic floor of 0.85 when R < 0.1, 
+    # and hard caps at 1.5. Meta-Governor must respect this exact window.
+    "control_gain":       {"attr": "control_gain",        "lo": 0.85,  "hi": 1.5,   "target": "block"},
+
+    # Training loop hard-caps at [0.40, 0.85] at the end of LOG_EVERY.
+    "instability_target": {"attr": "instability_target",  "lo": 0.40,  "hi": 0.85,  "target": "block"},
+
+    # Soft cap operational range.
+    "soft_cap":           {"attr": "soft_cap_target",     "lo": 100.0, "hi": 400.0, "target": "block"},
+
+    # Optimizer and model bounds remain unchanged.
+    "alpha_well_depth":   {"attr": None,                  "lo": -0.2,  "hi": 0.6,   "target": "optimizer"},
+    "temperature":        {"attr": None,                  "lo": 0.3,   "hi": 2.0,   "target": "model"},
+}
 
 # =============================================================================
 # LESSON MEMORY — k-NN over telemetry manifolds
@@ -111,7 +123,14 @@ class LessonMemory:
             print(f"🧠 LBR-Memory: no lesson file at {self.lessons_path}")
             return
 
+        # 🛡️ DUAL-CHANNEL FILTER: Only index actionable directions.
+        actionable_dirs = {
+            "raise", "lower", "set", "up", "increase", "boost", "deepen",
+            "down", "decrease", "reduce", "shrink", "fix", "assign"
+        }
+
         count = 0
+        skipped_edu = 0
         with open(self.lessons_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -132,6 +151,11 @@ class LessonMemory:
                 if not var or not direction:
                     continue
 
+                # Filter out non-actionable educational lessons
+                if str(direction).lower().strip() not in actionable_dirs:
+                    skipped_edu += 1
+                    continue
+
                 self.lessons.append(entry)
                 if self.vectors is None:
                     self.vectors = vec.reshape(1, -1)
@@ -140,7 +164,7 @@ class LessonMemory:
                 count += 1
 
         dim = self.vectors.shape[1] if self.vectors is not None else 0
-        print(f"🧠 LBR-Memory: indexed {count} actionable lessons | vector_dim={dim}")
+        print(f"🧠 LBR-Memory: indexed {count} actionable lessons | skipped {skipped_edu} educational lessons | vector_dim={dim}")
 
     def _load_geometry(self):
         if not self.geometry_path or not os.path.exists(self.geometry_path):
@@ -167,7 +191,6 @@ class LessonMemory:
             if rng == 0.0:
                 rng = 1.0
             vec.append(val / rng)
-
         arr = np.array(vec, dtype=np.float32)
         arr = np.tanh(arr)
         return arr
@@ -176,17 +199,14 @@ class LessonMemory:
                      min_similarity: float = 0.3) -> List[Tuple[int, float]]:
         if self.vectors is None or len(self.vectors) == 0:
             return []
-
         q = self._context_to_vector(ctx).reshape(1, -1)
         q_norm = np.linalg.norm(q) + 1e-8
         v_norm = np.linalg.norm(self.vectors, axis=1, keepdims=True) + 1e-8
         sims = (self.vectors @ q.T).flatten() / (v_norm.flatten() * q_norm)
         sims = (sims + 1.0) / 2.0
-
         valid_idx = np.where(sims >= min_similarity)[0]
         if len(valid_idx) == 0:
             return []
-
         top_k_idx = valid_idx[np.argsort(sims[valid_idx])[-k:][::-1]]
         return [(int(idx), float(sims[idx])) for idx in top_k_idx]
 
@@ -195,7 +215,6 @@ class LessonMemory:
         vec = self._context_to_vector(ctx)
         if vec is None:
             return
-
         entry = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "context": ctx,
@@ -203,13 +222,11 @@ class LessonMemory:
             "direction": action.get("direction"),
             "outcome": outcome,
         }
-
         self.lessons.append(entry)
         if self.vectors is None:
             self.vectors = vec.reshape(1, -1)
         else:
             self.vectors = np.vstack([self.vectors, vec])
-
         try:
             with open(self.lessons_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -360,33 +377,41 @@ class InternalMetaGovernor:
 
     def _local_fallback(self, packet) -> List[str]:
         actions = []
-
         if not packet.scheduler_alive or not packet.lr_valid:
             actions.append("LOCAL_RULE: SCHEDULER_DEAD — LR=0, resurrection required")
-
         if packet.pressure_concentration > 0.90:
             actions.append("LOCAL_RULE: pressure_concentration>0.90 — redistribute targets")
-
         if packet.mpc_intervention > 0.60 and packet.forecast_error > 0.20:
             actions.append("LOCAL_RULE: MPC false-positive — raise instability_target +10%")
-
         if packet.delta < -1.5:
             actions.append("LOCAL_RULE: DEEP_DRIFT — dampen control_gain 10%")
-
         if packet.mean_curvature > 0.8 and packet.coherence < 0.5:
             actions.append("LOCAL_RULE: high curvature + low coherence — raise expected_curvature")
 
-        # v12.1: Compensatory deadlock (R≈0, FFN-dominant, MPC dormant)
-        # Force alpha channel engagement by lowering alpha_norm_target
-        if (packet.pressure_concentration > 0.0
+        # =====================================================================
+        # 🚑 COMPENSATORY DEADLOCK & THERMOSTAT PARADOX WAKE-UP (v12.2)
+        # =====================================================================
+        if (packet.pressure_concentration > 0.80
                 and packet.pressure_dominant == "ffn"
                 and packet.mpc_intervention < 0.05):
+
+            woke_up = False
             for block in self.model.blocks:
-                current = getattr(block, 'alpha_norm_target', 150.0)
-                if hasattr(current, 'item'):
-                    current = current.item()
-                block.alpha_norm_target = max(20.0, current * 0.90)
-            actions.append("LOCAL_RULE: alpha_norm_target -10% (compensatory deadlock wake-up)")
+                current_target = getattr(block, 'alpha_norm_target', 150.0)
+                if hasattr(current_target, 'item'):
+                    current_target = current_target.item()
+
+                # If the target is > 40 but actual contrib is ~30, the governor is asleep.
+                # Force it down to 25.0 to trigger compression and register alpha work.
+                if current_target > 40.0:
+                    block.alpha_norm_target = 25.0
+                    woke_up = True
+                else:
+                    block.alpha_norm_target = max(20.0, current_target * 0.90)
+                    woke_up = True
+
+            if woke_up:
+                actions.append("LOCAL_RULE: alpha_norm_target forced to 25.0 (Thermostat Paradox break)")
 
         return actions if actions else ["LOCAL_RULE: no_action"]
 
@@ -396,8 +421,7 @@ class InternalMetaGovernor:
         var = decision["variable"]
         direction = decision["direction"]
         ctx = ctx or {}
-        
-        # =====================================================================
+
         # =====================================================================
         # 🚑 GOVERNOR RESCUE (v12.1d) - The Chi-Based Fix
         # Uses guaranteed telemetry (pressure_concentration) instead of phantom alpha_scale.
@@ -414,7 +438,7 @@ class InternalMetaGovernor:
         if var == "instability_target" and mpc_intervention < 0.05:
             print(f"   🚫 VERIFIER_REJECT: {var} — MPC dormant ({mpc_intervention:.3f})")
             return [f"VERIFIER_REJECT: {var} sterile"]
-            
+
         if var not in PARAMETER_REGISTRY:
             return [f"UNKNOWN_VARIABLE: {var}"]
         reg = PARAMETER_REGISTRY[var]
@@ -422,13 +446,13 @@ class InternalMetaGovernor:
         lo, hi = reg["lo"], reg["hi"]
         target = reg["target"]
         actions = []
-        
+
         if var == "alpha_well_depth":
             actions.extend(self._apply_alpha_well(direction, decision.get("value")))
             self._last_meta_step = step
             self.pending_verification.append({"step_applied": step, "loss_at_application": current_loss, "decision": decision})
             return actions
-            
+
         if target == "model":
             current = getattr(self.model, attr, None)
             if current is not None:
@@ -439,21 +463,42 @@ class InternalMetaGovernor:
                     self._last_meta_step = step
                     self.pending_verification.append({"step_applied": step, "loss_at_application": current_loss, "decision": decision})
             return actions if actions else [f"NO_APPLY: model has no attr {attr}"]
-            
+
+            print(f"🔍 DEBUG LBR: var='{var}' | attr='{attr}' | target='{target}' | direction='{direction}' | value={decision.get('value')}")
+
         if target == "block":
             applied = False
             for block in self.model.blocks:
                 current = getattr(block, attr, None)
-                if current is None: continue
+                if current is None:
+                    # 🛡️ BULLETPROOF: Attribute missing (e.g., after checkpoint load). 
+                    if attr == "control_gain": current = 1.0
+                    elif attr == "instability_target": current = 0.80
+                    elif attr == "ffn_norm_target": current = 50.0
+                    elif attr == "alpha_norm_target": current = 45.0
+                    elif attr == "soft_cap_target": current = 100.0
+                    else: continue
+
                 new_val = self._compute_new_value(current, direction, decision.get("value"))
-                if new_val is None: continue
+                if new_val is None: 
+                    # 🛡️ SAFETY NET: If an edge-case direction slips through, 
+                    # treat it as an observation, not a failure.
+                    if direction in ("investigate", "pause", "check", "analyze"):
+                        return [f"OBSERVE: {var} (current={current})"]
+                    continue
+
                 setattr(block, attr, max(lo, min(hi, new_val)))
                 applied = True
+
             if applied:
                 actions.append(f"{var} {direction} -> {new_val:.4f} (all blocks)")
                 self._last_meta_step = step
                 self.pending_verification.append({"step_applied": step, "loss_at_application": current_loss, "decision": decision})
-        return actions if actions else [f"NO_APPLY: {var} not found"]
+
+        if not actions:
+            if direction in ("investigate", "pause"):
+                return [f"OBSERVE: {var}"]
+            return [f"NO_APPLY: {var} not found"]
 
     def _compute_new_value(self, current: float, direction: str,
                                value: Optional[float]) -> Optional[float]:
@@ -512,7 +557,6 @@ class InternalMetaGovernor:
             }
 
 
-
 # =============================================================================
 # DROP-IN REPLACEMENT for integrate_meta_governor()
 # =============================================================================
@@ -569,41 +613,37 @@ def integrate_meta_governor(model, auto_tuner, step: int, current_loss: float,
             lessons_path=lessons_path,
             geometry_path=geometry_path
         )
+        # 🛡️ FIX: Move prune inside init so it only runs ONCE, not every step.
+        auto_tuner._meta_governor.memory.prune_sterile_lessons()
 
     governor = auto_tuner._meta_governor
-    governor.memory.prune_sterile_lessons()  # ← one-time cleanup
 
     # Build minimal packet from model telemetry (compatible with v4 TelemetryPacket)
     info = getattr(model, "_last_info", {}) or {}
     packet = _MinimalTelemetryPacket(
         step=step, loss=current_loss, lr=current_lr,
-        coherence=float(info.get("coherence", info.get("kuramoto_R", 0.0))), delta=float(info.get("variance_delta", 0.0)),
-        mpc_intervention=float(info.get("mpc_intervention_ratio", 0.0)), forecast_error=float(info.get("forecast_error", 0.0)),
+        coherence=float(info.get("coherence", info.get("kuramoto_R", 0.0))), 
+        delta=float(info.get("variance_delta", 0.0)),
+        mpc_intervention=float(info.get("mpc_intervention_ratio", 0.0)), 
+        forecast_error=float(info.get("forecast_error", 0.0)),
         pressure_concentration=float(info.get("pressure_concentration", 0.0)),
         pressure_dominant=str(info.get("pressure_dominant", info.get("dominant", "ffn"))),
         mean_curvature=float(info.get("mean_curvature", 0.0)),
         scheduler_alive=(current_lr > 0), lr_valid=(current_lr > 0),
     )
 
-    # =====================================================================
     # v12.1c: Wire real telemetry from forward pass 'info' dict to packet.
-    # This prevents ctx from receiving phantom defaults (1.0 / 0.0).
-    # =====================================================================
     packet.alpha_scale = float(info.get('alpha_scale', info.get('alphascale', 1.0)))
     packet.contrib_norm = float(info.get('contrib_norm', info.get('alpha_contrib_norm', 0.0)))
     packet.fiber_curvature_head_var = float(info.get('fiber_curvature_head_var', info.get('head_variance', 0.0)))
     packet.optimization_response_chi_R = float(info.get('optimization_response_chi_R', info.get('chi_R', 0.0)))
-    # =====================================================================
 
     actions = governor.step(packet, auto_tuner=auto_tuner)
     governor.verify(packet)
 
-    # Status print
-    status = governor.get_status()
-    mem_icon = "🧠" if status["memory_size"] > 0 else "🫙"
-    cb_icon = "🔴" if status["circuit_breaker"] else "🟢"
-    print(f"   {mem_icon} LBR-Gov: CB={cb_icon} | memory={status['memory_size']} | "
-          f"pending={status['pending_verifications']} | ε={status['exploration_rate']:.2f}")
+    # 🛡️ FIX: Removed redundant status prints. The training loop already prints 
+    # the Meta-Gov status at LOG_EVERY intervals. Printing every step causes 
+    # massive console spam and slows down training.
 
     return actions
 

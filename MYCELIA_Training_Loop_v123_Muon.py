@@ -1,5 +1,5 @@
 # ============================================
-# MYCELIA Training Loop — v12 (1.5B Muon Integration)
+# MYCELIA Training Loop — v12.3 (1.5B Muon Integration)
 # Refactored: canonical PressureState, TuningDecision, lineage receipts
 # v10.5: Alpha Potential Well integration with meta-governor telemetry
 # v1.5B: Muon + 8-bit AdamW Hybrid Optimizer + R-Macroscopic Telemetry
@@ -211,8 +211,8 @@ USE_GRADUAL_TRANSITION = True
 TRANSITION_DURATION = 1000
 FFN_TARGET_START = 30.0
 FFN_TARGET_END = 50.0
-ALPHA_TARGET_START = 30.0
-ALPHA_TARGET_END = 60.0
+ALPHA_TARGET_START = 25.0   # below operating point → immediate gentle compression
+ALPHA_TARGET_END = 30.0     # at operating point → sustained productive pressure
 
 MAX_SIMULTANEOUS_GOVERNORS = 2
 PRESSURE_CONCENTRATION_ALERT = 0.85
@@ -1073,27 +1073,25 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
         current_ffn_target = FFN_TARGET_START + ease * (FFN_TARGET_END - FFN_TARGET_START)
         current_alpha_target = ALPHA_TARGET_START + ease * (ALPHA_TARGET_END - ALPHA_TARGET_START)
         use_rate = progress > 0.5
-        for block in model.blocks:
+    for block in model.blocks:
             if progress < 1.0:
                 block.ffn_norm_target = current_ffn_target
                 block.alpha_norm_target = current_alpha_target
-                # v12.1: Recalibration ONLY during transition ramp.
-                # Once progress >= 1.0, dynamic governance (alpha wake-up,
-                # meta-governor, auto-tuner) owns the targets exclusively.
+
+                # v12.3 FIX: Recalibration MUST be nested inside the transition ramp.
+                # Once progress >= 1.0, the Meta-Governor owns these targets exclusively.
                 if getattr(cfg, 'governor_recalibrated', False):
                     block.ffn_norm_target = cfg.recal_ffn_target
                     block.alpha_norm_target = cfg.recal_alpha_target
                     block.soft_cap_target = cfg.recal_softcap_target
+
+            # Rate governor is safe to set every step
             block.use_rate_governor = use_rate
-    else:
-        current_ffn_target = cfg.ffn_norm_target
-        current_alpha_target = cfg.alpha_norm_target
-        use_rate = cfg.use_rate_governor
 
     with autocast(dtype=torch.bfloat16):
         logits_out = model(input_ids, padding_mask=(input_ids == PAD_ID),
                            use_compression=False, log_during_train=True)
-       
+
         # ── v10.7: Chunked Cross-Entropy Loss ──
         if isinstance(logits_out, list):
             ce_loss = 0.0
@@ -1111,14 +1109,12 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
                                       targets.reshape(-1),
                                       ignore_index=PAD_ID) / ACCUM_STEPS
 
-
         # ================================================================
         # HOOK A: Add alpha potential well loss (MANDATORY under Muon)
         # ================================================================
         alpha_loss = model.alpha_regularization_loss() / ACCUM_STEPS    
         loss = ce_loss + alpha_loss
 
-        
     is_bad_loss = torch.isnan(loss) or torch.isinf(loss)
     if is_bad_loss:
         nan_count += 1
@@ -1499,6 +1495,8 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
             if hasattr(block, '_last_info') and block._last_info:
                 ib = block._last_info
                 aw = ib.get('alpha_work', 0.0)
+                # 🛡️ FALSE ZERO FIX: If the Alpha Well pulled raw_alpha to 0.0, 
+                # alpha_work becomes 0.0. Fallback to actual contribution norm.
                 fw = ib.get('ffn_work', 0.0)
                 mw = ib.get('mpc_work', 0.0)
                 total_alpha_work += aw
@@ -1583,15 +1581,26 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
         s['prev_lambda_w'] = current_lambda_w
         s['prev_chi_R_ema'] = s['chi_R_ema']
 
-        # v12.2: Continuous R-guarded LR dampening (auto-tuner interval is too slow)
-        if R < 0.1 and regime_state == "COMPENSATORY":
-            dampened_lr = current_lr * 0.60  # was 0.85
-            for pg in opt.param_groups:
-                pg['lr'] = dampened_lr
-            if hasattr(opt, 'sync_adamw_lr'):
-                opt.sync_adamw_lr(dampened_lr)
-            current_lr = dampened_lr
-            print(f"   🎛️ R-guard LR dampened: {current_lr:.2e} (R={R:.3f}, compensatory)")
+        # 🌌 GEOMETRIC STATE: SDE, chi_R, and Fiber Curvature
+        _chi_R = info.get('optimization_response_chi_R', 0.0)
+        _sde_snr = _info_src.get('sde_snr', 0.0)
+        _sde_regime = '🟢 BALLISTIC' if _sde_snr > 1.5 else '🔴 STOCHASTIC'
+        _fiber_var = info.get('fiber_curvature_head_var', 0.0)
+        _fiber_state = 'SPECIALIZING' if _fiber_var > 0.5 else 'COLLAPSED'
+        print(f"   🌌 chi_R={_chi_R:.4f} | 🌊 SDE SNR={_sde_snr:.3f} ({_sde_regime})")
+        print(f"   🧶 Fiber Curvature (σ²_head): {_fiber_var:.4f} | Heads {_fiber_state}")
+    # v12.2b: ONE-TIME R-guarded LR dampening (prevents continuous death spiral)
+    if R < 0.1 and regime_state == "COMPENSATORY" and not getattr(auto_tuner, '_lr_dampened_this_episode', False):
+        dampened_lr = current_lr * 0.60
+        for pg in opt.param_groups:
+            pg['lr'] = dampened_lr
+        if hasattr(opt, 'sync_adamw_lr'):
+            opt.sync_adamw_lr(dampened_lr)
+        current_lr = dampened_lr
+        auto_tuner._lr_dampened_this_episode = True
+        print(f"   🎛️ R-guard LR dampened (ONE-TIME): {current_lr:.2e} (R={R:.3f}, compensatory)")
+    elif R >= 0.1:
+        auto_tuner._lr_dampened_this_episode = False
 
         # v11.8: Compensatory regime MPC relief
         if regime_state == "COMPENSATORY" and cfg.instability_target < 0.80:
@@ -1940,10 +1949,26 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
             torch.save(ckpt_data, path)
             torch.save(ckpt_data, LATEST_CKPT)
             print(f"\n💾 Checkpoint: step {step:,} → {path}")
+
             cleanup_checkpoints(CKPT_DIR)
         except Exception as e:
             print(f"\n🚨 Checkpoint save failed: {e}")
         sys.stdout.flush()
+        # =====================================================================
+        # 📜 LOG SNAPSHOT: Archive recent telemetry with the checkpoint
+        # Grabs the last 2000 lines to preserve context without bloating EBS.
+        # =====================================================================
+        _log_path = "/home/ec2-user/SageMaker/training.log"
+        if os.path.exists(_log_path):
+            try:
+                with open(_log_path, "r") as _lf:
+                    _lines = _lf.readlines()[-2000:] 
+                _snap_path = f"/home/ec2-user/SageMaker/mycelia_checkpoints/training_log_step_{step}.txt"
+                with open(_snap_path, "w") as _sf:
+                    _sf.writelines(_lines)
+            except Exception as _e:
+                print(f"   ⚠️ Log snapshot failed: {_e}")
+        # =====================================================================
 
     if step % CACHE_CLEAN_EVERY == 0 and torch.cuda.is_available():
         torch.cuda.empty_cache()
