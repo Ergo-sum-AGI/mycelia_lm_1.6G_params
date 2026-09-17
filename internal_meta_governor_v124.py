@@ -1,5 +1,5 @@
 """
-Internal Meta-Governor v12.4 — Lesson-Based Retrieval (LBR)
+Internal Meta-Governor v12.3 — Lesson-Based Retrieval (LBR)
 ==========================================================
 Zero external API calls. Learns from mycelia_lessons.jsonl and live telemetry.
 Drop-in replacement for Meta-Governor v4.py.
@@ -14,6 +14,8 @@ import json
 import os
 import random
 import numpy as np
+import torch
+import torch.nn.functional as F
 from collections import deque, defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
@@ -260,6 +262,11 @@ class InternalMetaGovernor:
         self.exploration_rate: float = 0.10
         self.min_confidence: float = 0.35
 
+        # 🛡️ KINEMATIC FRICTION RAIL: Ex-Ante Geometric Safety Belt
+        self.friction_history = []
+        self.FRICTION_RAIL_THRESHOLD = -0.02  # Danger zone approaching 0.00
+        self.FRICTION_WINDOW = 3              # Look at the last 3 steps
+
     def step(self, packet, auto_tuner=None) -> List[str]:
         """Called every LOG_EVERY steps. Returns list of action strings."""
         self.telemetry_history.append(packet.to_dict())
@@ -309,17 +316,19 @@ class InternalMetaGovernor:
             actions = []
 
         # =================================================================
-        # 🏄‍♂️ PHASE-TRANSITION SURFER: Post-actuation chi_R nudge
+        # ‍♂️ PHASE-TRANSITION SURFER: Post-actuation chi_R nudge
         # =================================================================
         chi_R = getattr(packet, 'optimization_response_chi_R', 0.0)
 
-        # Only evaluate if the slope is meaningful (avoid reacting to noise)
+        # 🛡️ BULLETPROOF: Initialize variables unconditionally at the top
+        action_fired = False
+        trace_msg = ""
+
         if abs(chi_R) > 0.05:
             current_alpha_target = getattr(self.model.blocks[0], 'alpha_norm_target', 30.0)
             if hasattr(current_alpha_target, 'item'):
                 current_alpha_target = current_alpha_target.item()
 
-            action_fired = False
             if chi_R < -0.05:
                 # Constructive slope: boost Alpha by lowering target
                 new_target = max(20.0, current_alpha_target * 0.98)
@@ -327,6 +336,7 @@ class InternalMetaGovernor:
                     for block in self.model.blocks:
                         block.alpha_norm_target = new_target
                     action_fired = True
+                    trace_msg = f"SURFER: chi_R={chi_R:.3f} -> alpha_target {current_alpha_target:.2f}->{new_target:.2f}"
 
             elif chi_R > 0.05:
                 # Regressing slope: cool Alpha by raising target
@@ -335,15 +345,54 @@ class InternalMetaGovernor:
                     for block in self.model.blocks:
                         block.alpha_norm_target = new_target
                     action_fired = True
+                    trace_msg = f"SURFER: chi_R={chi_R:.3f} -> alpha_target {current_alpha_target:.2f}->{new_target:.2f}"
 
-            # 🛡️ UNCONDITIONAL TRACE: Print to console even if it hit a boundary 
-            # and didn't append to actions, so the reviewer has a complete paper trail.
-            if action_fired:
-                if not isinstance(actions, list):
-                    actions = []
-                trace_msg = f"SURFER: chi_R={chi_R:.3f} -> alpha_target {current_alpha_target:.2f}->{new_target:.2f}"
-                actions.append(trace_msg)
-                print(f"\n   🏄‍♂️ [SURFER TRACE] {trace_msg}\n")
+        # Safely append and print if the controller actually fired
+        if action_fired:
+            if not isinstance(actions, list):
+                actions = []
+            actions.append(trace_msg)
+
+        # =================================================================
+        # 🛡️ KINEMATIC FRICTION RAIL: Ex-Ante Geometric Safety Belt
+        # Monitors the Friction Delta (late - early). A flatline (Δ ≈ 0) 
+        # indicates a collapse of the early-layer ballistic parallel transport.
+        # =================================================================
+        early_f = getattr(packet, 'early_friction', None)
+        late_f = getattr(packet, 'late_friction', None)
+
+        if early_f is not None and late_f is not None:
+            current_delta = late_f - early_f
+            self.friction_history.append(current_delta)
+
+            # Maintain a rolling window of the last 3 steps
+            if len(self.friction_history) > self.FRICTION_WINDOW:
+                self.friction_history.pop(0)
+
+            # Check for a geometric flatline
+            if len(self.friction_history) == self.FRICTION_WINDOW:
+                avg_delta = sum(self.friction_history) / self.FRICTION_WINDOW
+
+                if avg_delta > self.FRICTION_RAIL_THRESHOLD:
+                    # 🚨 FRACTIONAL WARM DOWN TRIGGERED
+                    rail_msg = f"FRICTION_RAIL: Kinematic flatline detected (Δ_avg={avg_delta:.3f}). Initiating Fractional Warmdown."
+                    actions.append(rail_msg)
+                    print(f"\n   🛡️ {rail_msg}\n")
+
+                    # Action 1: Cool the Alpha Pressure (Give early layers a break)
+                    current_target = getattr(self.model.blocks[0], 'alpha_norm_target', 30.0)
+                    if hasattr(current_target, 'item'):
+                        current_target = current_target.item()
+
+                    # Raise the target by 5% to cool the attention pressure
+                    new_target = min(60.0, current_target * 1.05)
+                    for block in self.model.blocks:
+                        block.alpha_norm_target = new_target
+
+                    # Action 2: Signal the main loop to expand SoftCap / Lower LR
+                    actions.append("COMMAND: EXPAND_SOFTCAP_WINDOW")
+                    actions.append("COMMAND: DROPLET_LR_10_PERCENT")
+
         return actions
 
     def _aggregate_retrieval(self, similar: List[Tuple[int, float]],
@@ -382,6 +431,35 @@ class InternalMetaGovernor:
             "confidence": confidence,
             "context": ctx,
         }
+
+    def compute_kinetic_triggers(current_drift_dir, current_pi_alpha, current_sigma2_head, attention_probs):
+        """
+        attention_probs: Tensor of shape [batch, num_heads, seq_len, seq_len] from the forward pass.
+        """
+        # 1. Sub-Basin Transition Index (SBTI)
+        sbti = 0.0
+        if self.prev_drift_dir is not None:
+            cos_sim = F.cosine_similarity(current_drift_dir.unsqueeze(0), self.prev_drift_dir.unsqueeze(0))
+            sbti = (1.0 - cos_sim.item())
+        self.prev_drift_dir = current_drift_dir.clone()
+
+        # 2. Governor Work Rate
+        gov_work = abs(current_pi_alpha - self.prev_pi_alpha)
+        self.prev_pi_alpha = current_pi_alpha
+
+        # 3. Head Decoupling Velocity
+        decoupling_vel = current_sigma2_head - self.prev_sigma2_head
+        self.prev_sigma2_head = current_sigma2_head
+
+        # 4. Attention Entropy Variance (The Hidden Descent Proxy)
+        # Compute Shannon entropy for each head: H = -sum(p * log(p))
+        # attention_probs shape: [B, H, N, N]. We average over batch and query tokens to get head-level entropy.
+        p = attention_probs.mean(dim=[0, 2]) # Shape: [H, N] (Average over batch and query positions)
+        p = p.clamp(min=1e-9) # Prevent log(0)
+        head_entropies = -torch.sum(p * torch.log(p), dim=-1) # Shape: [H]
+        entropy_var = torch.var(head_entropies).item()
+
+        return sbti, gov_work, decoupling_vel, entropy_var
 
     def _normalize_direction(self, direction: Optional[str], variable: str,
                               ctx: Dict) -> Optional[str]:

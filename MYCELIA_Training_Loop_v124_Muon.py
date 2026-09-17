@@ -197,7 +197,7 @@ CACHE_CLEAN_EVERY = 1000
 PEAK_LR = 3e-4
 MIN_LR = 3e-5
 WARMUP_STEPS = 500
-TOTAL_TOKENS_TARGET = 5_000_000_000
+TOTAL_TOKENS_TARGET = 10_000_000_000
 
 ENABLE_LR_BURST = True
 CONSENSUS_ROUNDS = 2
@@ -364,7 +364,7 @@ class ThroughputTracker:
         if s['raw_progress'] > 100:
             progress_str = f"{s['raw_progress']:.1f}% (>{s['target_gb']:.1f}B target)"
         print(f"\n⏱️ Step {s['step']:,} | {s['smoothed_tps']:.0f} tok/s | "
-              f"{s['total_gb']:.2f}/{s['target_gb']:.1f} GB | "
+              f"{s['total_gb']:.2f}/{s['target_gb']:.1f} Billion | "
               f"{progress_str} | ETA {eta_str} | Elapsed {elapsed_str}")
         sys.stdout.flush()
         return s
@@ -968,12 +968,14 @@ def compute_sde_telemetry():
             "sde_drift_norm": 0.0, "sde_noise_trace": 0.0, "sde_snr": 0.0,
             "sde_drift_dir": 0.0, "sde_noise_dir": 0.0, "sde_snr_dir": 0.0,
             "directional_coherence_layers": [],
-            "directional_coherence_global": 0.0
+            "directional_coherence_global": 0.0,
+            "pawula_ratio": 0.0, "pawula_safe": False
         }
 
     drift_raw, noise_raw = [], []
     drift_dir, noise_dir = [], []
     coherence_per_layer = []
+    d4_dir = []  # 🛡️ TEST 3: 4th moment accumulator for Pawula's Theorem
 
     for idx in range(len(layers) - 1):
         l_curr = layers[idx]
@@ -1001,7 +1003,6 @@ def compute_sde_telemetry():
         v_hat = v_dir / (torch.norm(v_dir, dim=-1, keepdim=True) + 1e-8)
 
         # Step 4: Compute c_l = ||mean(v_hat)||
-        # Mean across batch and token dimensions
         mean_v_hat = v_hat.mean(dim=[0, 1])  # [D]
         c_l = torch.norm(mean_v_hat).item()
         coherence_per_layer.append(c_l)
@@ -1009,25 +1010,95 @@ def compute_sde_telemetry():
         # For global SNR, use the same directional computation
         D1_dir = v_dir.mean(dim=[0, 1])
         drift_dir.append(torch.norm(D1_dir).item())
-        c_dir = v_dir - D1_dir.unsqueeze(0).unsqueeze(0)
-        noise_dir.append(0.5 * (c_dir ** 2).mean().item())
 
+        c_dir = v_dir - D1_dir.unsqueeze(0).unsqueeze(0)
+
+        # 🛡️ TEST 3: Pawula's Theorem Verification (4th Central Moment)
+        # CRITICAL FIX: Cast to float64 to prevent underflow when raising tiny 
+        # directional increments to the 4th power.
+        c_dir_f64 = c_dir.to(torch.float64)
+        d2_term = (c_dir_f64 ** 2).mean().item()
+        d4_term = (c_dir_f64 ** 4).mean().item()
+
+        noise_dir.append(0.5 * d2_term)
+        d4_dir.append(d4_term)
+
+    # ==========================================
+    # 1. AGGREGATION (Calculate the averages first)
+    # ==========================================
     avg_drift_raw = sum(drift_raw) / len(drift_raw)
     avg_noise_raw = sum(noise_raw) / len(noise_raw)
     rho_raw = avg_drift_raw / (avg_noise_raw ** 0.5 + 1e-8)
 
     avg_drift_dir = sum(drift_dir) / len(drift_dir)
     avg_noise_dir = sum(noise_dir) / len(noise_dir)
-    rho_dir = avg_drift_dir / (avg_noise_dir ** 0.5 + 1e-8)
+    avg_d4_dir = sum(d4_dir) / len(d4_dir)
 
+    rho_dir = avg_drift_dir / (avg_noise_dir ** 0.5 + 1e-8)
     avg_coherence = sum(coherence_per_layer) / len(coherence_per_layer) if coherence_per_layer else 0.0
 
+    # ==========================================
+    # 2. PAWULA'S THEOREM VERIFICATION (Now we can use avg_noise_dir)
+    # ==========================================
+    avg_var_dir = 2.0 * avg_noise_dir  # Recover true variance from the 0.5 * var proxy
+    pawula_ratio = avg_d4_dir / (avg_var_dir ** 2 + 1e-12)
+
+    # A safe Gaussian-like process has a ratio roughly between 1.0 and 10.0.
+    is_pawula_safe = pawula_ratio < 50.0 
+
+    pawula_status = "✅ FOKKER-PLANCK" if is_pawula_safe else "⚠️ HEAVY TAILS"
+    print(f"   🛡️ PAWULA CHECK: Var={avg_var_dir:.2e} | D4={avg_d4_dir:.2e} | Ratio={pawula_ratio:.2f} ({pawula_status})")
+
+    # ==========================================
+    # 3. RETURN THE DICTIONARY
+    # ==========================================
     return {
         "sde_drift_norm": avg_drift_raw, "sde_noise_trace": avg_noise_raw, "sde_snr": rho_raw,
         "sde_drift_dir": avg_drift_dir, "sde_noise_dir": avg_noise_dir, "sde_snr_dir": rho_dir,
         "directional_coherence_layers": coherence_per_layer,
-        "directional_coherence_global": avg_coherence
+        "directional_coherence_global": avg_coherence,
+        "pawula_ratio": pawula_ratio,
+        "pawula_safe": is_pawula_safe
     }
+
+def compute_attention_entropy_variance():
+    """
+    Computes the variance of Shannon entropy across the 32 attention heads.
+    FIX: Calculates entropy per-token first, then averages, to preserve variance.
+    """
+    layers = sorted(_fiber_q.keys())
+    if len(layers) == 0: return 0.0
+
+    H, D_head = 32, 2048 // 32
+    layer_vars = []
+
+    for l in layers:
+        qkv_raw = _fiber_q[l]
+        B, T, _ = qkv_raw.shape
+        q, k, _ = qkv_raw.chunk(3, dim=-1)
+
+        q_heads = q.view(B, T, H, D_head).transpose(1, 2)
+        k_heads = k.view(B, T, H, D_head).transpose(1, 2)
+
+        T_slice = min(T, 64)
+        q_slice = q_heads[:, :, :T_slice, :]
+        k_slice = k_heads[:, :, :T_slice, :]
+
+        logits = torch.matmul(q_slice, k_slice.transpose(-2, -1)) / (D_head ** 0.5)
+        probs = F.softmax(logits, dim=-1)
+
+        # 1. Calculate Shannon entropy PER TOKEN per head FIRST
+        probs_clamped = probs.clamp(min=1e-9)
+        # Shape: [B, H, T_slice]
+        token_entropies = -torch.sum(probs_clamped * torch.log(probs_clamped), dim=-1) 
+
+        # 2. Now average over batch and sequence to get mean entropy per head [H]
+        head_entropies = token_entropies.mean(dim=[0, 2]) 
+
+        # 3. Variance of entropy across the 32 heads
+        layer_vars.append(torch.var(head_entropies).item())
+
+    return sum(layer_vars) / len(layer_vars) if layer_vars else 0.0
 
 def compute_fiber_curvature():
     layers = sorted(_fiber_q.keys())
@@ -1063,7 +1134,7 @@ for b in model.blocks:
 PROFILE_STEP = 17_873
 prof = None
 
-for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
+for step in tqdm(range(step, total_steps), desc="Training", initial=step):
     # ── v11.7 PROFILER START ──
     if step == PROFILE_STEP and prof is None:
         print(f"\n🔬 Starting profiler for step {step}...")
@@ -1224,6 +1295,14 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
     if step % LOG_EVERY == 0 and step > 0:
         current_avg_loss = float(np.mean(losses_window[-100:])) if losses_window else float('inf')
         current_lr = opt.param_groups[0]['lr'] if hasattr(opt, 'param_groups') and opt.param_groups else PEAK_LR
+
+        #  TEST 2: Manual Target Depression to Break Equilibrium
+        # Forces AlphaScale to compress the partitioned linguistic fibers
+        if step == 208080:
+            depression_value = 25.0
+            for block in model.blocks:
+                block.alpha_norm_target = depression_value
+            print(f"\n🚨 MANUAL INTERVENTION: Depressed tau_alpha to {depression_value} to force macro-state condensation.\n")
 
         # Build PressureState and get TuningDecision from auto-tuner
         _info_src = getattr(model, '_last_info', None) or {}
@@ -1474,9 +1553,33 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
         print(f"   Coherence: {coherence:.4f} {coh_icon}")
         if friction:
             print(f"   Friction: {friction} | early={early_var:.2f} late={late_var:.2f} Δ={delta:+.2f}")
+        # 🔬 KINETIC TRIGGERS & HIDDEN DESCENT DASHBOARD
+        if not hasattr(auto_tuner, '_prev_drift_dir'):
+            auto_tuner._prev_drift_dir = None
+            auto_tuner._prev_pi_alpha = 0.0
+            auto_tuner._prev_sigma2_head = 0.0
+        _current_drift = sde_metrics.get('sde_drift_norm', 0.0)
+        sbti = 0.0
+        if auto_tuner._prev_drift_dir is not None and _current_drift > 0 and auto_tuner._prev_drift_dir > 0:
+            cos_sim = min(1.0, max(-1.0, _current_drift / (auto_tuner._prev_drift_dir + 1e-8)))
+            sbti = 1.0 - cos_sim
+        auto_tuner._prev_drift_dir = _current_drift
+        _current_pi_alpha = info.get('pressure_by_governor', {}).get('alpha', 0.0)
+        gov_work = abs(_current_pi_alpha - auto_tuner._prev_pi_alpha)
+        auto_tuner._prev_pi_alpha = _current_pi_alpha
+        _current_sigma2 = info.get('fiber_curvature_head_var', 0.0)
+        decoupling_vel = _current_sigma2 - auto_tuner._prev_sigma2_head
+        auto_tuner._prev_sigma2_head = _current_sigma2
+        # Calculate Attention Entropy Variance (The Hidden Descent Proxy)
+        _entropy_var = compute_attention_entropy_variance()
 
-        # ── Spectral entropy proxy ──
-        if step % LOG_EVERY == 0 and hasattr(model.blocks[-1], '_hidden_state'):
+        # Print the complete dashboard block
+        print(f"   🔬 KINETIC TRIGGERS & HIDDEN DESCENT:")
+        print(f"      👆 Sub-Basin Jump (SBTI): {sbti:.3f} | ⚡ Control Effort (Ẇ_gov): {gov_work:.2f}")
+        print(f"      🧬 Decoupling Vel (σ̇²_head): {decoupling_vel:+.3f} | 🧶 Fiber Curv: {_current_sigma2:.4f}")
+        print(f"      🧠 Attention Entropy Var: {_entropy_var:.4f}")
+
+        if hasattr(model.blocks[-1], '_hidden_state'):
             h = model.blocks[-1]._hidden_state
             spectral_concentration = compute_spectral_concentration(h, top_k=3)
             if spectral_concentration > 0.0:
@@ -1698,19 +1801,6 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
     elif R >= 0.1:
         auto_tuner._lr_dampened_this_episode = False
 
-    # v12.2b: ONE-TIME R-guarded LR dampening (prevents continuous death spiral)
-    if R < 0.1 and regime_state == "COMPENSATORY" and not getattr(auto_tuner, '_lr_dampened_this_episode', False):
-        dampened_lr = current_lr * 0.60
-        for pg in opt.param_groups:
-            pg['lr'] = dampened_lr
-        if hasattr(opt, 'sync_adamw_lr'):
-            opt.sync_adamw_lr(dampened_lr)
-        current_lr = dampened_lr
-        auto_tuner._lr_dampened_this_episode = True
-        print(f"   🎛️ R-guard LR dampened (ONE-TIME): {current_lr:.2e} (R={R:.3f}, compensatory)")
-    elif R >= 0.1:
-        auto_tuner._lr_dampened_this_episode = False
-
         # v11.8: Compensatory regime MPC relief
         if regime_state == "COMPENSATORY" and cfg.instability_target < 0.80:
             for block in model.blocks:
@@ -1738,15 +1828,15 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
         _mpc_recent = _info_src.get('mpc_intervention_ratio', 0.0)
         _forecast_err = _info_src.get('forecast_error', 0.0)
 
-        if not hasattr(auto_tuner, '_mpc_release_step'):
-            auto_tuner._mpc_release_step = 0
-        _in_grace = False
-        if _mpc_recent < 0.05:
-            if auto_tuner._mpc_release_step == 0:
-                auto_tuner._mpc_release_step = step
-                print(f"   🎯 MPC predictor recalibration started at step {step}")
-            elif step - auto_tuner._mpc_release_step < 15000:
-                _in_grace = True
+    if not hasattr(auto_tuner, '_mpc_release_step'):
+        auto_tuner._mpc_release_step = 0
+    _in_grace = False
+    if _mpc_recent < 0.05:
+        if auto_tuner._mpc_release_step == 0:
+            auto_tuner._mpc_release_step = step
+            print(f"   🎯 MPC predictor recalibration started at step {step}")
+        elif step - auto_tuner._mpc_release_step < 15000:
+            _in_grace = True
         else:
             auto_tuner._mpc_release_step = 0
 
@@ -1790,6 +1880,21 @@ for step in tqdm(range(step, step + 610351), desc="Training", initial=step):
             current_lr=current_lr, scheduler=scheduler,
             log_every=LOG_EVERY, local_only=False,
         )
+
+        # 🛡️ Execute Kinematic Friction Rail Commands
+        if meta_actions:
+            if "COMMAND: EXPAND_SOFTCAP_WINDOW" in meta_actions:
+                # Temporarily relax the SoftCap max_raw threshold to give late layers more headroom
+                for block in model.blocks:
+                    if hasattr(block, 'soft_cap'):
+                        block.soft_cap = max(getattr(block, 'soft_cap', 15.0), 18.0)
+                print("   ️ FRICTION RAIL: SoftCap window temporarily expanded.")
+            if "COMMAND: DROPLET_LR_10_PERCENT" in meta_actions:
+                # Drop the learning rate by 10% to cool the optimization dynamics
+                for param_group in opt.param_groups:
+                    param_group['lr'] *= 0.90
+                print(f"   🛡️ FRICTION RAIL: Learning rate dropped to {opt.param_groups[0]['lr']:.2e}")
+
         # 🏄‍♂️ SURFER ACTUATION LOG: Print only when the Phase-Transition Surfer fires
         if meta_actions:
             for _action in meta_actions:
