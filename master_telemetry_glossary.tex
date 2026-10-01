@@ -1,0 +1,499 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{geometry}
+\geometry{a4paper, margin=0.75in}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{longtable}
+
+% Define Palette
+\definecolor{docnavy}{HTML}{1A2B4C}
+\definecolor{docblue}{HTML}{2B5B84}
+\definecolor{docaccent}{HTML}{D9534F}
+\definecolor{docdark}{HTML}{222222}
+\definecolor{doclight}{HTML}{F8F9FA}
+\definecolor{docborder}{HTML}{E2E8F0}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=docblue,
+    citecolor=docblue,
+    urlcolor=docblue
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small \textcolor{docnavy}{\textbf{MyceliaLM \& MASSIF Master Telemetry Glossary}}}
+\rhead{\small \textcolor{gray}{Unified LaTeX Reference v3.5}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Custom TColorBox for Metrics
+\newtcolorbox{metricbox}[1]{
+    colback=doclight,
+    colframe=docnavy,
+    fonttitle=\bfseries\color{white},
+    title=#1,
+    arc=2pt,
+    top=6pt, bottom=6pt, left=8pt, right=8pt,
+    boxrule=0.8pt
+}
+
+\newtcolorbox{logbox}[1]{
+    colback=doclight,
+    colframe=docblue,
+    fonttitle=\bfseries\color{white},
+    title=#1,
+    arc=2pt,
+    top=6pt, bottom=6pt, left=8pt, right=8pt,
+    boxrule=0.8pt
+}
+
+\title{\vspace{-1.5cm}\Large \textbf{UNIFIED MASTER TELEMETRY GLOSSARY \& METRIC SPECIFICATION}\\
+\large \textcolor{docblue}{MyceliaLM Cognitive Architecture \& MASSIF Latent Trajectory Framework}\\
+\small \textsf{Continuous SDE Kinematics, Closed-Loop Governors, Pressure Tensor Diagnostics, and Macroscopic Phase Transitions}}
+\author{\textbf{Daniel Solis} -- Principal Investigator, Dubito Inc. / Ergo Sum AGI Safety Systems}
+\date{September 2026 -- Version 3.5 Unified Synthesis}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent This document serves as the unified, mathematically complete, and rigorous master glossary synthesizing all parameters, observables, control variables, and diagnostic metrics from the \textbf{MyceliaLM Telemetry Dashboard Parameter Glossary} and the \textbf{MASSIF (Multiscale Attractor Stability \& Stress Inference Framework) Telemetry Glossary}. It bridges continuous-time It\^o Stochastic Differential Equation (SDE) trajectory kinematics, Fokker-Planck jump diagnostics, depth-dependent friction cascades, closed-loop cybernetic governor stacks, pressure tensor thermodynamics, and Kuramoto-inspired order parameters. Every metric is defined with its exact mathematical expression, plain-language translation, target/healthy operational ranges, and diagnostic significance for ex-ante AI safety.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% SECTION: REVISION LOG
+\section{Modification and Addition Log}
+\begin{logbox}{Comprehensive Audit: Merging MyceliaLM and MASSIF Sources}
+This master document unifies two distinct telemetry files: the operational dashboard specification (\emph{MyceliaLM Telemetry Dashboard}) and the theoretical trajectory analysis specification (\emph{MASSIF Telemetry Glossary}). The following synthesis rules, additions, and modifications were applied:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Unification of Terminology \& Notation}: Standardized notation across both files. Hidden residual states are defined as $h_t^{(l)} \in \mathbb{R}^d$, velocity as $v_t^{(l)}$, persistence as $I_t$, and optimization pressure as $\Pi$.
+    \item \textbf{Integration of SDE/Fokker-Planck Diagnostics}: Merged Pawula higher-moment observables ($D^{(1)}, D^{(2)}, D^{(4)}, \mathcal{R}_{\text{Pawula}}$) from MASSIF with the real-time SDE Signal-to-Noise Ratio ($\rho_{\text{dir}}$) from MyceliaLM.
+    \item \textbf{Added Missing Metrics from MASSIF \& GitHub Repositories}:
+    \begin{itemize}
+        \item \textbf{Dubito Index / Paradox Score}: Added explicit paradox/uncertainty score metric ($\text{Dubito} > 7.0$) monitoring multi-head dissensus and trajectory curvature before confidence collapse.
+        \item \textbf{Effective Warning Lead Time ($\tau_{\text{eff}}$)}: Added the positive predictive warning window (+32.4 tokens) quantifying lead time over output probability metrics.
+        \item \textbf{Cache-Fused Kinematic Rail (CFKR) Friction Delta ($\Delta_{\text{CFKR}}$)}: Added in-vivo KV-cache mutation metric grafting early-to-late variance differentials.
+        \item \textbf{Block-4 Fourier Spectral Resonance ($S(\omega)$)}: Added spectral prompt susceptibility metric measuring frequency-selective entrainment.
+        \item \textbf{Kuramoto Synchronization Velocity ($V_t$) \& Acceleration ($A_t$)}: Added derivatives of the macroscopic order parameter for dynamical taxonomy classification.
+    \end{itemize}
+    \item \textbf{Four-Fold Standardized Structure per Metric}: Every entry now explicitly includes:
+    \begin{enumerate}
+        \item \textbf{Definition}: What the metric represents geometrically and physically.
+        \item \textbf{Mathematical Calculation \& Plain Words}: Formal equation and word-by-word explanation.
+        \item \textbf{Target / Healthy Values}: Explicit quantitative boundaries, warning thresholds, and failure regimes.
+        \item \textbf{Diagnostic Significance}: Why the metric matters for real-time safety, governance, and model performance.
+    \end{enumerate}
+\end{enumerate}
+\end{logbox}
+
+\newpage
+
+% SECTION 1: FOUNDATIONAL GEOMETRY & GOVERNORS
+\section{Foundational Hidden-State Geometry \& Governor Architecture}
+
+\subsection{Hidden-State Trajectory Geometry}
+\begin{metricbox}{Metric 1.1: Hidden State Residual Vector ($h^{(l)}_t$)}
+\textbf{What it is:} The continuous representational state vector in the residual stream evolving through network layers $l \in [1, L]$ and autoregressive time steps $t \in [1, T]$.\\
+\textbf{Calculation:}
+$$h^{(l)}_t \in \mathbb{R}^d, \quad l \in \{1, \dots, L\}, \quad t \in \{1, \dots, T\}$$
+\emph{In Words:} "The hidden state at layer $l$ and timestep $t$ is a vector belonging to the $d$-dimensional real vector space $\mathbb{R}^d$, evolving sequentially across layers $l$ from 1 to $L$ and generation steps $t$ from 1 to $T$."\\
+\textbf{Target / Healthy Values:} Mean Euclidean norm $\|h^{(l)}_t\|_2$ bounded between $18.0$ and $24.0$ Activation Magnitude Units.\\
+\textbf{Why it matters:} Treats model execution as a continuous Riemannian trajectory rather than a black-box function, enabling real-time differential geometric telemetry during the forward pass.
+\end{metricbox}
+
+\subsection{The Four-Loop Closed-Loop Governor Stack}
+\begin{metricbox}{Metric 1.2: FFN Veto Governor Norm ($\|h_{\text{FFN}}^{(l)}\|_2$)}
+\textbf{What it is:} Real-time activation magnitude of the feed-forward network (FFN) sub-layer contribution.\\
+\textbf{Calculation:}
+$$\|h_{\text{FFN}}^{(l)}\|_2 \le \tau_{\text{FFN}}$$
+\emph{In Words:} "The Euclidean two-norm of the feed-forward network hidden state vector $h_{\text{FFN}}$ must remain less than or equal to the target threshold $\tau_{\text{FFN}}$."\\
+\textbf{Target / Healthy Values:} Bounded below $\tau_{\text{FFN}} = 12.5$. Governor work triggers when $\|h_{\text{FFN}}\|_2 > 12.5$.\\
+\textbf{Why it matters:} Prevents FFN sub-layers from overwhelming attention representations with high-norm memorized facts or hallucinated noise.
+\end{metricbox}
+
+\begin{metricbox}{Metric 1.3: Alpha Scaling Governor Norm ($\|\alpha_a a^{(l)} + \alpha_f f^{(l)}\|_2$)}
+\textbf{What it is:} Combined weighted contribution vector from self-attention ($a^{(l)}$) and FFN ($f^{(l)}$) branches under layer-scaling parameters $\alpha_a, \alpha_f$.\\
+\textbf{Calculation:}
+$$\|\alpha_a \cdot a^{(l)} + \alpha_f \cdot f^{(l)}\|_2 \le \tau_\alpha$$
+\emph{In Words:} "The Euclidean two-norm of the combined vector sum of attention contribution $\alpha_a a$ plus feed-forward contribution $\alpha_f f$ must be less than or equal to threshold $\tau_\alpha$."\\
+\textbf{Target / Healthy Values:} Bounded below $\tau_\alpha = 15.0$. Normal operating range: $8.5 - 12.0$.\\
+\textbf{Why it matters:} Prevents explosive gain accumulation across sequential transformer layers, stabilizing Manual Muon and AdamW optimization.
+\end{metricbox}
+
+\begin{metricbox}{Metric 1.4: Soft Cap Governor Norm ($\|r^{(l)}\|_2$)}
+\textbf{What it is:} Total residual stream vector norm prior to final layer-norm projection.\\
+\textbf{Calculation:}
+$$\|r^{(l)}\|_2 \le \tau_{\text{cap}}$$
+\emph{In Words:} "The Euclidean norm of the residual stream vector $r$ must be less than or equal to the soft-capping threshold $\tau_{\text{cap}}$."\\
+\textbf{Target / Healthy Values:} Bounded below $\tau_{\text{cap}} = 28.0$. Smooth softplus compression activates above $22.0$.\\
+\textbf{Why it matters:} Eliminates catastrophic norm explosion and logit overflow without introducing discontinuous gradient clipping.
+\end{metricbox}
+
+\begin{metricbox}{Metric 1.5: Model Predictive Control (MPC) Governor ($I_{\text{combined}}$)}
+\textbf{What it is:} Predictive instability score calculated by a temporal Kalman/Bayesian forecaster observing trend acceleration.\\
+\textbf{Calculation:}
+$$I_{\text{combined}}^{(l)} \le I_{\text{target}}$$
+\emph{In Words:} "The trend-extended combined instability score $I_{\text{combined}}$ at layer $l$ must remain less than or equal to target instability $I_{\text{target}}$."\\
+\textbf{Target / Healthy Values:} Target threshold $I_{\text{target}} = 0.45$. Warning range: $0.45 - 0.70$. Critical: $> 0.70$.\\
+\textbf{Why it matters:} Provides proactive, predictive intervention by executing fractional dampening before trajectory degeneration serializes into output tokens.
+\end{metricbox}
+
+\section{Stochastic Differential Equation (SDE) \& Fokker-Planck Diagnostics}
+
+\begin{metricbox}{Metric 2.1: First-Order Drift Velocity ($D^{(1)}$ / $\mu_{\text{drift}}$)}
+\textbf{What it is:} Deterministic first-order drift vector driving logical progression through latent semantic space under an It\^o SDE ($dz_t = D^{(1)} dt + \sqrt{2D^{(2)}} dW_t$).\\
+\textbf{Calculation:}
+$$D^{(1)}(z) = \lim_{\Delta t \to 0} \frac{1}{\Delta t} \mathbb{E}\left[\Delta z \mid z_t = z\right]$$
+\emph{In Words:} "The first-order drift vector $D^{(1)}$ equals the limit as delta $t$ approaches zero of one divided by delta $t$, multiplied by the expected displacement delta $z$ given state $z$."\\
+\textbf{Target / Healthy Values:} Magnitude range $18.79$ to $21.58$.\\
+\textbf{Why it matters:} Measures the strength of deterministic reasoning drive versus stochastic diffusion noise.
+\end{metricbox}
+
+\begin{metricbox}{Metric 2.2: Second-Order Diffusion Coefficient / Variance Rate ($D^{(2)}$ / $\text{Var}$)}
+\textbf{What it is:} Second-order Kramers-Moyal diffusion tensor measuring conditional variance rate of hidden-state increments.\\
+\textbf{Calculation:}
+$$D^{(2)}(z) = \lim_{\Delta t \to 0} \frac{1}{2\Delta t} \mathbb{E}\left[(\Delta z)(\Delta z)^\top \mid z_t = z\right]$$
+\emph{In Words:} "The second-order diffusion coefficient $D^{(2)}$ equals the limit as delta $t$ approaches zero of one divided by two times delta $t$, multiplied by the expected outer product of hidden-state increments delta $z$ with themselves."\\
+\textbf{Target / Healthy Values:} Healthy range: $2.2 \times 10^{-4}$ to $2.9 \times 10^{-4}$. Sudden jump $> 4.0 \times 10^{-4}$ indicates noise explosion.\\
+\textbf{Why it matters:} Quantifies continuous stochastic perturbation acting on the representational trajectory.
+\end{metricbox}
+
+\begin{metricbox}{Metric 2.3: Fourth-Order Kramers-Moyal Coefficient ($D^{(4)}$ / $D4$)}
+\textbf{What it is:} Fourth-order stochastic moment auditing higher-order non-Gaussian jump noise.\\
+\textbf{Calculation:}
+$$D^{(4)}(z) = \lim_{\Delta t \to 0} \frac{1}{24 \Delta t} \mathbb{E}\left[(\Delta z)^4 \mid z_t = z\right]$$
+\emph{In Words:} "The fourth-order Kramers-Moyal coefficient $D^{(4)}$ equals the limit as delta $t$ approaches zero of one divided by twenty-four times delta $t$, multiplied by the expected fourth moment of increments delta $z$."\\
+\textbf{Target / Healthy Values:} Healthy range: $10^{-7}$ to $10^{-6}$. Sustained values $> 5 \times 10^{-6}$ signal non-Langevin jump noise.\\
+\textbf{Why it matters:} Tests whether the system obeys continuous Langevin dynamics or suffers from discontinuous state jumps.
+\end{metricbox}
+
+\begin{metricbox}{Metric 2.4: Pawula Diagnostic Ratio ($\mathcal{R}_{\text{Pawula}}$)}
+\textbf{What it is:} Normalized Pawula ratio testing for Fokker-Planck truncation validity ($D^{(n)} = 0$ for $n \ge 3$).\\
+\textbf{Calculation:}
+$$\mathcal{R}_{\text{Pawula}} = \frac{D^{(4)}}{(V_{\text{Pawula}})^2}$$
+\emph{In Words:} "The Pawula ratio $\mathcal{R}_{\text{Pawula}}$ equals the fourth-order Kramers-Moyal coefficient $D^{(4)}$ divided by the square of the Pawula variance scale $V_{\text{Pawula}}$."\\
+\textbf{Target / Healthy Values:} Healthy range: $6.0$ to $50.0$. Values $> 50.0$ signal breakdown of continuous SDE assumptions.\\
+\textbf{Why it matters:} By Pawula's Theorem, if $D^{(4)} \to 0$, all higher-order terms vanish, proving that trajectory evolution is governed strictly by drift and diffusion.
+\end{metricbox}
+
+\begin{metricbox}{Metric 2.5: SDE Directional Signal-to-Noise Ratio ($\rho_{\text{dir}}$)}
+\textbf{What it is:} Ratio of target-directed deterministic drift to effective diffusion noise intensity.\\
+\textbf{Calculation:}
+$$\rho_{\text{dir}} = \frac{\langle D^{(1)}(z), v_{\text{target}} \rangle}{\sqrt{D^{(2)}_{\text{eff}}(z)}}$$
+\emph{In Words:} "The directional signal-to-noise ratio $\rho_{\text{dir}}$ equals the inner product of first-order drift vector $D^{(1)}$ and target direction vector $v_{\text{target}}$, divided by the square root of effective diffusion $D^{(2)}$."\\
+\textbf{Regime Thresholds:}
+\begin{itemize}
+    \item $\rho_{\text{dir}} > 100.0$: \textbf{Regime I (Persistent Individual Ballistic Flow - PIBF)}. Tokens travel along deterministic geodesics.
+    \item $\rho_{\text{dir}} \ll 1.0$: \textbf{Regime II (Stochastic Collapse)}. Trajectories degenerate into random walks.
+\end{itemize}
+\textbf{Why it matters:} Identifies whether reasoning is driven by ballistic vector flow or collapsing into thermalized noise.
+\end{metricbox}
+
+\section{Latent Trajectory Kinematics \& Differential Geometry}
+
+\begin{metricbox}{Metric 3.1: Latent Velocity ($v^{(l)}_t$)}
+\textbf{What it is:} Layer-to-layer vector displacement in the residual stream.\\
+\textbf{Calculation:}
+$$v^{(l)}_t = h^{(l)}_t - h^{(l-1)}_t, \quad \|v^{(l)}_t\|_2 = \sqrt{\sum_{i=1}^d \left(h_{t,i}^{(l)} - h_{t,i}^{(l-1)}\right)^2}$$
+\emph{In Words:} "Latent velocity $v$ at layer $l$ equals the hidden state vector at layer $l$ minus the hidden state vector at layer $l-1$."\\
+\textbf{Target / Healthy Values:} $\|v\|_2$ range $2.8$ to $4.2$ units per layer.\\
+\textbf{Why it matters:} Quantifies the magnitude of representational transformation performed by layer $l$.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.2: Latent Acceleration ($a^{(l)}_t$)}
+\textbf{What it is:} Rate of change of latent velocity across consecutive network layers.\\
+\textbf{Calculation:}
+$$a^{(l)}_t = v^{(l)}_t - v^{(l-1)}_t$$
+\emph{In Words:} "Latent acceleration $a$ at layer $l$ equals velocity at layer $l$ minus velocity at layer $l-1$."\\
+\textbf{Target / Healthy Values:} $\|a\|_2$ range $0.4$ to $1.2$ units per layer$^2$.\\
+\textbf{Why it matters:} Detects force application and momentum shifts in representational processing.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.3: Trajectory Curvature ($\kappa_t$)}
+\textbf{What it is:} Angular curvature measuring how sharply the hidden-state trajectory bends through latent space.\\
+\textbf{Calculation:}
+$$\kappa_t = \frac{\|v_t \times a_t\|_2}{\|v_t\|_2^3 + \epsilon} \quad \text{or} \quad \kappa^{(l)} = \frac{\|v^{(l)}\|_2^2}{\|v^{(l)}\|_2^2 + \epsilon \|a^{(l)}\|_2}$$
+\emph{In Words:} "Curvature $\kappa$ equals the norm of the cross product of velocity and acceleration, divided by the cubed norm of velocity plus epsilon."\\
+\textbf{Target / Healthy Values:} Healthy range: $0.12$ to $0.35$. Spikes $> 0.65$ indicate logical reorientation or severe instability.\\
+\textbf{Why it matters:} High curvature signals hesitation, context switching, or imminent trajectory breakdown.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.4: Trajectory Jerk ($j^{(l)}$)}
+\textbf{What it is:} Third temporal derivative of position representing sudden, erratic changes in trajectory curvature.\\
+\textbf{Calculation:}
+$$j^{(l)} = \left|\kappa^{(l)} - \kappa^{(l-1)}\right|$$
+\emph{In Words:} "Jerk $j$ at layer $l$ equals the absolute difference between curvature at layer $l$ and curvature at layer $l-1$."\\
+\textbf{Target / Healthy Values:} Bounded below $0.15$. Spikes $> 0.40$ signal discontinuous shock updates.\\
+\textbf{Why it matters:} Identifies abrupt, un-smoothed layer interventions that risk disrupting downstream representations.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.5: Directional Persistence ($I_t$) \& Rolling Persistence ($\bar{I}_t^{(k)}$)}
+\textbf{What it is:} Cosine alignment between consecutive velocity vectors, quantifying directional memory in latent motion.\\
+\textbf{Calculation:}
+$$I_t = \frac{v_t \cdot v_{t-1}}{\|v_t\|_2 \|v_{t-1}\|_2 + \epsilon}, \quad \bar{I}_t^{(k)} = \frac{1}{k} \sum_{i=t-k+1}^t I_i$$
+\emph{In Words:} "Persistence $I$ at step $t$ equals the dot product of velocity at step $t$ and velocity at step $t-1$, divided by the product of their Euclidean norms plus epsilon."\\
+\textbf{Regime Classification:}
+\begin{itemize}
+    \item $I_t \approx -1.0$: Anti-persistent (corrective, healthy exploratory reasoning).
+    \item $I_t \approx 0.0$: Orthogonal directional reset.
+    \item $I_t > 0.0$: Persistence flip crossing into attractor lock-in / repetitive collapse.
+\end{itemize}
+\textbf{Why it matters:} Primary early indicator of recursive collapse; persistent positive values ($I_t > 0.4$) indicate trapped, non-corrective looping.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.6: Local Tension ($\sigma_t$)}
+\textbf{What it is:} Cross-run variance of rolling persistence across $N$ independent random initializations or runs.\\
+\textbf{Calculation:}
+$$\sigma_t = \text{std}\left(\left\{\bar{I}_t^{(r)}\right\}_{r=1}^N\right) = \sqrt{\frac{1}{N-1} \sum_{r=1}^N \left(\bar{I}_t^{(r)} - \langle \bar{I}_t \rangle\right)^2}$$
+\emph{In Words:} "Local tension $\sigma$ at step $t$ equals the sample standard deviation of rolling persistence across $N$ independent runs."\\
+\textbf{Target / Healthy Values:} Healthy range: $0.05$ to $0.22$. Spikes $\sigma_t > 0.35$ achieve AUROC $> 0.9$ in predicting collapse 2-3 tokens in advance.\\
+\textbf{Why it matters:} Precursor stress metric; quantifies sensitivity to initial conditions prior to persistent flips.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.7: Volatility Gradient ($\Phi_t$) \& Predictive Velocity ($\Psi_t^{(m)}$)}
+\textbf{What it is:} Discrete derivative of local tension ($\Phi_t = d\sigma_t/dt$) and its low-pass filtered momentum ($\Psi_t^{(m)}$) over window $m$.\\
+\textbf{Calculation:}
+$$\Phi_t = \sigma_t - \sigma_{t-1}, \quad \Psi_t^{(m)} = \frac{1}{m} \sum_{i=0}^{m-1} \Phi_{t-i}$$
+\emph{In Words:} "Volatility gradient $\Phi$ equals tension at step $t$ minus tension at step $t-1$. Predictive volatility velocity $\Psi$ equals the moving average of $\Phi$ over window $m$."\\
+\textbf{Target / Healthy Values:} $\Phi_t$ bounded between $-0.10$ and $+0.10$.\\
+\textbf{Why it matters:} Isolates structural stress acceleration from transient sampling noise.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.8: Dubito Score / Paradox Index ($\text{Dubito}$)}
+\textbf{What it is:} Real-time paradox and uncertainty score measuring multi-head dissensus and trajectory curvature under contradictory inputs.\\
+\textbf{Calculation:}
+$$\text{Dubito}_t = \sigma_{\text{head}, t}^2 \cdot \exp\left(\gamma \cdot \kappa_t\right) \cdot \left(1 - C_t\right)$$
+\emph{In Words:} "The Dubito score equals inter-head fiber curvature times the exponential of gamma times trajectory curvature, multiplied by one minus attention coherence $C$."\\
+\textbf{Target / Healthy Values:} Healthy range: $1.2$ to $4.5$. Paradox threshold: $\text{Dubito} > 7.0$.\\
+\textbf{Why it matters:} Detects internal self-doubt and conflicting context coordinates before logit confidence collapses.
+\end{metricbox}
+
+\begin{metricbox}{Metric 3.9: Effective Warning Lead Time ($\tau_{\text{eff}}$)}
+\textbf{What it is:} Time window (in tokens) between real-time telemetry anomaly detection and output token collapse.\\
+\textbf{Calculation:}
+$$\tau_{\text{eff}} = t_{\text{collapse}} - t_{\text{detection}}$$
+\emph{In Words:} "Effective warning lead time equals the timestep of token-level collapse minus the timestep of internal telemetry alert."\\
+\textbf{Target / Healthy Values:} Target: $\tau_{\text{eff}} \ge +30.0$ tokens (MASSIF achieves mean $\tau_{\text{eff}} = +32.4$ tokens).\\
+\textbf{Why it matters:} Demonstrates positive lead time over output probability metrics, enabling in-vivo intervention before bad tokens emit.
+\end{metricbox}
+
+\section{Friction, Depth Variance, \& Silicon Hardware Rails}
+
+\begin{metricbox}{Metric 4.1: Early Layer Variance ($\mathcal{V}_{\text{early}}$) \& Late Layer Variance ($\mathcal{V}_{\text{late}}$)}
+\textbf{What it is:} Mean normalized activation variance across early processing layers ($1 \to L/2$) versus late projection layers ($L/2+1 \to L$).\\
+\textbf{Calculation:}
+$$\mathcal{V}_{\text{early}} = \frac{1}{L/2} \sum_{\ell=1}^{L/2} \mathcal{V}^{(\ell)}, \quad \mathcal{V}_{\text{late}} = \frac{1}{L/2} \sum_{\ell=L/2+1}^L \mathcal{V}^{(\ell)}$$
+\emph{In Words:} "Early variance equals the average normalized activation variance over the first half of network layers; late variance equals the average over the second half."\\
+\textbf{Target / Healthy Values:} $\mathcal{V}_{\text{early}} \in [0.93, 0.98]$; $\mathcal{V}_{\text{late}} \in [1.00, 1.06]$.\\
+\textbf{Why it matters:} Tracks energy transfer from perceptual feature extraction to token generation.
+\end{metricbox}
+
+\begin{metricbox}{Metric 4.2: Variance Delta / Friction Delta ($\Delta$ \& $\Delta_{\text{CFKR}}$)}
+\textbf{What it is:} Depth-dependent variance differential measuring energy dissipation across layers.\\
+\textbf{Calculation:}
+$$\Delta = \mathcal{V}_{\text{early}} - \mathcal{V}_{\text{late}}$$
+\emph{In Words:} "Friction Delta equals mean early-layer variance minus mean late-layer variance."\\
+\textbf{Regime Classification:}
+\begin{itemize}
+    \item $\Delta > +1.0$: \textbf{DISSIPATED}. Early layers filter noise; late layers project freely.
+    \item $-1.0 \le \Delta \le +1.0$: \textbf{HARMONIZED}. Healthy balanced depth variance ($\Delta \approx -0.06$ to $-0.09$).
+    \item $\Delta < -1.0$: \textbf{DEEP DRIFT}. Late layers amplify noise; high runaway risk.
+    \item $\Delta \to 0.00$: \textbf{Geometric Flatline}. Critical depth-specialization collapse triggering Cache-Fused Kinematic Rail (CFKR) intervention.
+\end{itemize}
+\textbf{Why it matters:} Triggers kernel-level KV-cache mutation in CFKR, achieving an 8.88$\times$ speedup over software logit bias matrices.
+\end{metricbox}
+
+\section{Attention Consensus, Inter-Head Fiber Curvature, \& Spectral Dynamics}
+
+\begin{metricbox}{Metric 5.1: Coherence Index ($C$) / Acclamation Rate}
+\textbf{What it is:} Fraction of token positions where cross-head attention variance falls below an adaptive threshold $\theta_t$.\\
+\textbf{Calculation:}
+$$C = \frac{1}{T} \sum_{t=1}^T \mathbb{1}\left[\sigma_{\text{attn}, t}^2 < \theta_t\right], \quad \theta_t = \text{Median}(\sigma_{\text{attn}}^2) + 1.4826 \cdot \text{MAD}(\sigma_{\text{attn}}^2)$$
+\emph{In Words:} "Coherence $C$ equals the fraction of sequence steps where attention head variance is less than the MAD-scaled median threshold."\\
+\textbf{Target / Healthy Values:} Healthy range: $0.72$ to $0.88$.\\
+\textbf{Why it matters:} Measures structural consensus across attention heads.
+\end{metricbox}
+
+\begin{metricbox}{Metric 5.2: Inter-Head Fiber Curvature ($\sigma^2_{\text{head}}$)}
+\textbf{What it is:} Variance of trajectory curvature across attention heads within a layer.\\
+\textbf{Calculation:}
+$$\sigma^2_{\text{head}} = \text{Var}_{h \in \{1,\dots,H\}}\left(\kappa_t^{(h)}\right) = \frac{1}{H} \sum_{h=1}^H \left(\kappa_t^{(h)} - \bar{\kappa}_t\right)^2$$
+\emph{In Words:} "Fiber curvature $\sigma^2_{\text{head}}$ equals the sample variance of trajectory curvature across all $H$ attention heads."\\
+\textbf{Target / Healthy Values:} Healthy range: $0.60$ to $0.77$. Collapse below $0.50$ indicates head homogenization.\\
+\textbf{Why it matters:} Proxy for functional specialization across attention channels.
+\end{metricbox}
+
+\begin{metricbox}{Metric 5.3: Decoupling Velocity ($\dot{\sigma}^2_{\text{head}}$)}
+\textbf{What it is:} First-order time derivative of inter-head fiber curvature.\\
+\textbf{Calculation:}
+$$\dot{\sigma}^2_{\text{head}} \approx \frac{\sigma^2_{\text{head}, t} - \sigma^2_{\text{head}, t-\Delta t}}{\Delta t}$$
+\emph{In Words:} "Decoupling velocity equals the rate of change of inter-head fiber curvature over time step delta $t$."\\
+\textbf{Significance:} $\dot{\sigma}^2_{\text{head}} > 0$ with $\Delta \text{Loss} \approx 0$ confirms \textbf{Hidden Descent}---internal representational optimization occurring below scalar loss plateaus.
+\end{metricbox}
+
+\begin{metricbox}{Metric 5.4: Block-4 Fourier Spectral Resonance ($S(\omega)$)}
+\textbf{What it is:} Power spectral density peak of hidden-state trajectories under periodic prompt forcing.\\
+\textbf{Calculation:}
+$$S(\omega) = \left| \frac{1}{T} \sum_{t=1}^T h_t e^{-i \omega t} \right|^2, \quad \omega_{\text{block4}} = \frac{2\pi}{4}$$
+\emph{In Words:} "Spectral density $S(\omega)$ equals the squared magnitude of the discrete Fourier transform of hidden state vectors at block frequency $\omega$."\\
+\textbf{Target / Healthy Values:} Normalized resonance peak $< 2.5$. Spikes $> 6.0$ indicate entrainment into "AAAABBBB" periodic loops.\\
+\textbf{Why it matters:} Quantifies frequency-selective susceptibility to structural repetition in prompts.
+\end{metricbox}
+
+\section{Instability Forecasting \& Closed-Loop Control}
+
+\begin{metricbox}{Metric 6.1: Integrated Instability Field ($I(l)$ \& $I_{\text{combined}}(l)$)}
+\textbf{What it is:} Bayesian instability score combining consensus observation ($P_{\text{current}}$), historical persistence ($P_{\text{persist}}$), velocity, and acceleration.\\
+\textbf{Calculation:}
+$$I(l) = c(l) P_{\text{current}}(l) + (1-c(l)) P_{\text{persist}}(l), \quad I_{\text{combined}}(l) = I(l) + w_v \text{ReLU}(v_I) + w_a \text{ReLU}(a_I)$$
+\emph{In Words:} "Base instability $I$ equals confidence times current prediction plus one minus confidence times historical persistence. Combined instability adds weighted velocity and acceleration terms."\\
+\textbf{Target / Healthy Values:} Bounded below $I_{\text{target}} = 0.45$.\\
+\textbf{Why it matters:} Provides a unified scalar field driving active governor interventions.
+\end{metricbox}
+
+\begin{metricbox}{Metric 6.2: Forecast Confidence ($F(l)$)}
+\textbf{What it is:} Calibrated trust metric evaluating instability forecasts against coherence and curvature.\\
+\textbf{Calculation:}
+$$F(l) = \sigma\left(w_c C(l) + w_f F(l-1)\right) \cdot \exp\left(-\gamma \cdot \text{ReLU}(\kappa(l) - \kappa_0)\right)$$
+\emph{In Words:} "Forecast confidence $F$ equals the sigmoid of weighted coherence and historical confidence, exponentially damped by trajectory curvature exceeding threshold $\kappa_0$."\\
+\textbf{Target / Healthy Values:} Operating range: $0.65$ to $0.95$.\\
+\textbf{Why it matters:} Damps governor intervention strength when trajectory curvature is high to prevent over-correction during natural logical turns.
+\end{metricbox}
+
+\section{Pressure Tensor ($\Pi$) \& Macroscopic Order Parameters}
+
+\begin{metricbox}{Metric 7.1: Global Optimization Pressure ($\Pi$)}
+\textbf{What it is:} Aggregate thermodynamic stress exerted by closed-loop governors on the residual stream, measured in Activation Magnitude Units ($L_2$ Norms).\\
+\textbf{Calculation:}
+$$\Pi = \frac{1}{L} \sum_{l=1}^L \sum_i \lambda_i(l) g_i(l) = \Pi_\alpha + \Pi_{\text{FFN}} + \Pi_{\text{MPC}} + \Pi_{\text{cap}}$$
+\emph{In Words:} "Global pressure $\Pi$ equals the layer-averaged sum of governor work $\lambda_i$ times constrained activation norm $g_i$ across attention, FFN, MPC, and SoftCap channels."\\
+\textbf{Target / Healthy Values:} Healthy aggregate range: $330.0$ to $400.0$ units.\\
+\textbf{Why it matters:} Quantifies total internal stress required to maintain trajectory stability.
+\end{metricbox}
+
+\begin{metricbox}{Metric 7.2: Constructive-Compensatory Ratio ($R_t$) [Primary Order Parameter]}
+\textbf{What it is:} Macroscopic order parameter evaluating whether optimization is driven by structural attention learning or compensatory brute-force stabilization.\\
+\textbf{Calculation:}
+$$R_t = \frac{\Pi_\alpha}{\Pi_{\text{FFN}} + \Pi_{\text{MPC}}}$$
+\emph{In Words:} "The order parameter $R_t$ equals attention governor pressure $\Pi_\alpha$ divided by the sum of feed-forward pressure $\Pi_{\text{FFN}}$ and control pressure $\Pi_{\text{MPC}}$."\\
+\textbf{Regime Classification:}
+\begin{itemize}
+    \item $R_t > 1.50$: \textbf{CONSTRUCTIVE}. Efficient attention-driven geometric learning.
+    \item $1.15 \le R_t \le 1.50$: \textbf{MARGINAL}. Surfing the critical phase boundary.
+    \item $R_t < 0.80$: \textbf{COMPENSATORY}. Glassy stasis / brute-force memorization.
+\end{itemize}
+\textbf{Why it matters:} Central state variable tracking representational maturity and phase transitions.
+\end{metricbox}
+
+\begin{metricbox}{Metric 7.3: Optimization Response Function ($\chi_R$)}
+\textbf{What it is:} Thermodynamic derivative of scalar loss with respect to macroscopic order parameter $R_t$.\\
+\textbf{Calculation:}
+$$\chi_R = \frac{\partial \mathcal{L}_{\text{loss}}}{\partial R_t} \approx \frac{\Delta \mathcal{L}_t}{\Delta R_t}$$
+\emph{In Words:} "The Optimization Response Function $\chi_R$ equals the partial derivative of loss with respect to the macroscopic order parameter $R_t$."\\
+\textbf{Regime Sign Flips:}
+\begin{itemize}
+    \item $\chi_R < -0.05$: \textbf{Constructive Regime}. Increasing $R_t$ minimizes loss.
+    \item $\chi_R \approx 0.00$: \textbf{Critical Region ($R_t \approx 1.2$)}. Order parameter and loss decouple.
+    \item $\chi_R > +0.05$: \textbf{Compensatory Regime}. Increasing $R_t$ increases loss (firefighting).
+\end{itemize}
+\textbf{Why it matters:} Acts as thermodynamic susceptibility, signaling when training enters diminishing returns.
+\end{metricbox}
+
+\section{Kuramoto Synchronization \& Geometric Convergence (GCI)}
+
+\begin{metricbox}{Metric 8.1: Kuramoto Synchronization Order Parameter ($R_t^{\text{Kuramoto}}$)}
+\textbf{What it is:} Ensemble order parameter quantifying directional phase alignment across $N$ independent trajectories.\\
+\textbf{Calculation:}
+$$R_t^{\text{Kuramoto}} = \left\| \frac{1}{N} \sum_{r=1}^N u_t^{(r)} \right\|_2, \quad u_t^{(r)} = \frac{v_t^{(r)}}{\|v_t^{(r)}\|_2}$$
+\emph{In Words:} "The Kuramoto synchronization order parameter equals the norm of the ensemble average of normalized unit velocity vectors across $N$ runs."\\
+\textbf{Target / Healthy Values:} $R_t \approx 0$ indicates incoherent phase space; $R_t \approx 1$ indicates complete trajectory locking.\\
+\textbf{Why it matters:} Measures global phase-locking across runs or attention heads.
+\end{metricbox}
+
+\begin{metricbox}{Metric 8.2: Synchronization Velocity ($V_t$) \& Acceleration ($A_t$)}
+\textbf{What it is:} First and second time derivatives of the Kuramoto synchronization parameter ($V_t = dR_t/dt, A_t = d^2R_t/dt^2$).\\
+\textbf{Dynamical Taxonomy Classes:}
+\begin{itemize}
+    \item \textbf{Accelerators ($V_t > 0$)}: Synchronization builds before flip (GPT-2, Gemma, DeepSeek). Predictable warning.
+    \item \textbf{Decelerators ($V_t < 0$)}: Synchronization peaks then declines into flip (TinyLlama, RWKV).
+    \item \textbf{Neutral ($V_t \approx 0$)}: Flip occurs independent of synchronization (Qwen2).
+    \item \textbf{Instant ($V_t$ undefined)}: Flips at step 1 with zero warning window (Bloom, Mamba).
+\end{itemize}
+\textbf{Why it matters:} Classifies model architectures into distinct dynamical vulnerability profiles.
+\end{metricbox}
+
+\begin{metricbox}{Metric 8.3: Geometric Convergence Index (GCI) \& Crystallization Horizon}
+\textbf{What it is:} Composite stopping metric auditing six disentangled information-geometric criteria to terminate pre-training at exact representational completion.\\
+\textbf{Calculation:}
+$$\text{GCI} = \frac{1}{6} \sum_{i=1}^6 \mathbb{1}\left[\text{Criterion}_i\right]$$
+\emph{In Words:} "GCI equals one-sixth times the sum of indicator functions across six criteria: (1) fiber curvature saturation, (2) decoupling velocity decay, (3) attention entropy variance stability, (4) governor work rate minimization, (5) Pawula stability ratio, and (6) macroscopic order parameter stability."\\
+\textbf{Phase Mapping:}
+\begin{itemize}
+    \item $\text{GCI} = 0.00$: \textbf{EARLY PLASTICITY}
+    \item $\text{GCI} = 0.50$: \textbf{LATE DESCENT}
+    \item $\text{GCI} = \mathbf{1.00}$ (sustained for 10,000 steps): \textbf{CRYSTALLIZATION HORIZON} (Stop Training).
+\end{itemize}
+\textbf{Why it matters:} Replaces scalar loss heuristics with a rigorous physics-grounded stopping standard, preventing over-training.
+\end{metricbox}
+
+\section{Advanced Anisotropic \& Subspace Metrics}
+
+\begin{metricbox}{Metric 9.1: ANOVA Positional-Contextual Subspace Incoherence}
+\textbf{What it is:} Inner product metric measuring orthogonality between positional topology and contextual semantics under two-way ANOVA decomposition ($h = \mu + pos + ctx + resid$).\\
+\textbf{Calculation:}
+$$\text{Incoherence} = \max_{t, c} \left| \left\langle \frac{pos_t^{(l)}}{\|pos_t^{(l)}\|_2}, \frac{ctx_c^{(l)}}{\|ctx_c^{(l)}\|_2} \right\rangle \right|$$
+\emph{In Words:} "Subspace incoherence equals the maximum absolute inner product between normalized positional basis vector $pos$ and normalized context basis vector $ctx$."\\
+\textbf{Target / Healthy Values:} Target: $\text{Incoherence} < 0.15$.\\
+\textbf{Why it matters:} Ensures clean orthogonal coordinate disentanglement between sequence position and semantic context.
+\end{metricbox}
+
+\begin{metricbox}{Metric 9.2: Alpha Potential Well Regularizer ($U(\alpha)$)}
+\textbf{What it is:} Quadratic potential well acting as an effective Ricci curvature regulator against scaling symmetries under Manual Muon optimization.\\
+\textbf{Calculation:}
+$$U(\alpha) = \lambda_{\text{well}} \sum_{l=1}^L \left[ \left(\alpha_{\text{attn}}^{(l)} - 1.0\right)^2 + \left(\alpha_{\text{FFN}}^{(l)} - 1.0\right)^2 \right]$$
+\emph{In Words:} "Potential energy $U(\alpha)$ equals scale factor $\lambda_{\text{well}}$ times the sum across layers of squared deviations of attention and FFN layer scales from unity."\\
+\textbf{Target / Healthy Values:} Bounded potential energy $U(\alpha) < 0.25$.\\
+\textbf{Why it matters:} Suppresses scale drift in layer-norm parameters during long-run training.
+\end{metricbox}
+
+\section{Summary Matrix of Telemetry Observables}
+
+\begin{center}
+\small
+\begin{longtable}{p{2.2cm} p{1.2cm} p{3.8cm} p{3.2cm} p{3.5cm}}
+\toprule
+\textbf{Field Name} & \textbf{Symbol} & \textbf{Mathematical Formula} & \textbf{Healthy / Target Range} & \textbf{Diagnostic Significance} \\
+\midrule
+\endhead
+\textbf{Var} & $D^{(2)}$ & $\lim \frac{1}{2\Delta t} \mathbb{E}[\Delta z \Delta z^\top]$ & $2.2 \times 10^{-4} - 2.9 \times 10^{-4}$ & Second-order SDE variance rate \\
+\textbf{D4} & $D^{(4)}$ & $\lim \frac{1}{24\Delta t} \mathbb{E}[(\Delta z)^4]$ & $10^{-7} - 10^{-6}$ & Non-Gaussian jump noise check \\
+\textbf{Pawula Ratio} & $\mathcal{R}_{\text{Pawula}}$ & $D^{(4)} / (V_{\text{Pawula}})^2$ & $6.0 - 50.0$ & Fokker-Planck truncation validity \\
+\textbf{SDE SNR} & $\rho_{\text{dir}}$ & $\|D^{(1)}\|_2 / \sqrt{D^{(2)}}$ & $> 100.0$ & Ballistic reasoning vs random walk \\
+\textbf{Dubito Index} & $\text{Dubito}$ & $\sigma_{\text{head}}^2 e^{\gamma \kappa} (1-C)$ & $1.2 - 4.5$ ($\text{Threshold} > 7.0$) & In-vivo paradox / uncertainty alert \\
+\textbf{Lead Time} & $\tau_{\text{eff}}$ & $t_{\text{collapse}} - t_{\text{detection}}$ & $\ge +30.0$ tokens & Predictive warning window \\
+\textbf{Friction Delta} & $\Delta$ & $\mathcal{V}_{\text{early}} - \mathcal{V}_{\text{late}}$ & $-0.06 - -0.09$ & Depth energy cascade / CFKR trigger \\
+\textbf{Fiber Curvature} & $\sigma^2_{\text{head}}$ & $\text{Var}_h(\kappa_t^{(h)})$ & $0.60 - 0.77$ & Attention head specialization \\
+\textbf{Decoupling Vel} & $\dot{\sigma}^2_{\text{head}}$ & $\Delta \sigma^2_{\text{head}} / \Delta t$ & $> +0.005$ & Active Hidden Descent rate \\
+\textbf{Block-4 Peak} & $S(\omega)$ & $|\frac{1}{T} \sum h_t e^{-i\omega t}|^2$ & $< 2.5$ & Spectral prompt entrainment \\
+\textbf{Total Pressure} & $\Pi$ & $\Pi_\alpha + \Pi_{\text{FFN}} + \Pi_{\text{MPC}} + \Pi_{\text{cap}}$ & $330.0 - 400.0$ units & Total activation stress \\
+\textbf{Order Param} & $R_t$ & $\Pi_\alpha / (\Pi_{\text{FFN}} + \Pi_{\text{MPC}})$ & $> 1.50$ (Constructive) & Constructive vs Compensatory phase \\
+\textbf{Response Func} & $\chi_R$ & $\partial \mathcal{L} / \partial R_t$ & $< -0.05$ & Thermodynamic susceptibility \\
+\textbf{GCI Index} & $\text{GCI}$ & $\frac{1}{6} \sum \mathbb{1}[\text{Crit}_i]$ & $1.00$ at Crystallization & Stopping criterion for pre-training \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\end{document}
